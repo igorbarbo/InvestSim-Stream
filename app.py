@@ -1,38 +1,43 @@
-import streamlit as st
 import pandas as pd
-# Aqui está o segredo: o caminho deve ser logic.investment
-from logic.investment import calcular_investimento
+import streamlit as st
 
-st.set_page_config(page_title="InvestSim Pro", layout="wide")
+# -------------------------------
+# IMPORTS DE LÓGICA
+# -------------------------------
+# Importamos funções do pacote logic. Se ainda não existirem, crie um placeholder
+try:
+    from logic.investment import simulate_investment
+except ImportError:
+    # Placeholder para evitar que o app quebre
+    def simulate_investment(amount, rate, years):
+        st.warning("Função simulate_investment não encontrada. Retornando valor padrão.")
+        return amount * (1 + rate) ** years
 
-st.title("💰 Simulador de Investimentos")
+try:
+    from logic.returns import real_return
+except ImportError:
+    # Placeholder para evitar que o app quebre
+    def real_return(amount, rate, inflation):
+        st.warning("Função real_return não encontrada. Retornando valor padrão.")
+        return amount * (1 + rate - inflation)
 
-# Layout em Colunas
-col_input, col_output = st.columns([1, 2], gap="large")
+from components.cards import display_main_metrics
 
-with col_input:
-    st.subheader("Configurações")
-    with st.container(border=True):
-        v_inicial = st.number_input("Investimento Inicial (R$)", value=1000.0)
-        v_mensal = st.number_input("Aporte Mensal (R$)", value=100.0)
-        v_taxa = st.slider("Taxa Anual (%)", 1.0, 20.0, 10.0)
-        v_tempo = st.slider("Tempo (Anos)", 1, 30, 5)
+# -------------------------------
+# LÓGICA DO APP
+# -------------------------------
 
-with col_output:
-    # Chama a função que criamos na pasta logic
-    df = calcular_investimento(v_inicial, v_mensal, v_taxa, v_tempo)
-    
-    # Cards Profissionais
-    final_val = df['Saldo'].iloc[-1]
-    investido = df['Investido'].iloc[-1]
-    lucro = final_val - investido
+st.title("Simulador de Investimentos")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Acumulado", f"R$ {final_val:,.2f}")
-    c2.metric("Total Investido", f"R$ {investido:,.2f}")
-    c3.metric("Rendimento", f"R$ {lucro:,.2f}", delta=f"{(lucro/investido)*100:.1f}%")
+# Exemplo de input do usuário
+initial_amount = st.number_input("Valor inicial (R$):", value=1000.0)
+interest_rate = st.number_input("Taxa de retorno anual (%):", value=5.0) / 100
+years = st.number_input("Número de anos:", value=10, step=1)
+inflation_rate = st.number_input("Inflação anual (%):", value=3.0) / 100
 
-    st.divider()
-    # Gráfico com as duas linhas (Saldo vs Investido)
-    st.line_chart(df.set_index("Mês")[["Saldo", "Investido"]])
-    
+# Simulação
+future_value = simulate_investment(initial_amount, interest_rate, years)
+real_future_value = real_return(future_value, interest_rate, inflation_rate)
+
+# Exibir resultados
+display_main_metrics(future_value, real_future_value)
