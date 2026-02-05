@@ -1,54 +1,36 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import numpy as np
 import altair as alt
 
+# Importa lógica
 from logic.investment import simulate_investment
 from logic.returns import real_return
 from components.cards import display_main_metrics
 
-st.title("Simulador de Investimentos")
+st.set_page_config(page_title="InvestSim", layout="wide")
+st.title("Simulador de Investimentos 🚀")
 
-# ------------------------------
-# INPUTS DO USUÁRIO
-# ------------------------------
-initial_amount = st.number_input("Valor inicial (R$):", value=1000.0)
-interest_rate = st.number_input("Taxa de retorno anual (%):", value=5.0) / 100
-years = st.number_input("Número de anos:", value=10, step=1)
-inflation_rate = st.number_input("Inflação anual (%):", value=3.0) / 100
+# Input do usuário
+initial_amount = st.number_input("Valor Inicial (R$)", min_value=0.0, value=1000.0)
+monthly_contrib = st.number_input("Contribuição Mensal (R$)", min_value=0.0, value=100.0)
+annual_rate = st.number_input("Retorno Anual (%)", min_value=0.0, value=10.0)
+years = st.number_input("Anos", min_value=1, max_value=50, value=10)
 
-# ------------------------------
-# SIMULAÇÃO ANUAL
-# ------------------------------
-years_list = list(range(1, years + 1))
-nominal_values = [simulate_investment(initial_amount, interest_rate, y) for y in years_list]
-real_values = [real_return(val, interest_rate, inflation_rate) for val in nominal_values]
+# Simula investimento
+future_value = simulate_investment(initial_amount, monthly_contrib, annual_rate/100, years)
+real_future_value = real_return(future_value, inflation_rate=0.04, years=years)  # inflação 4% como exemplo
 
-# ------------------------------
-# EXIBIR RESULTADOS
-# ------------------------------
-future_value = nominal_values[-1]
-real_future_value = real_values[-1]
-
+# Mostra métricas
 display_main_metrics(future_value, real_future_value)
 
-# ------------------------------
-# GRÁFICO INTERATIVO
-# ------------------------------
-df = pd.DataFrame({
-    'Ano': years_list,
-    'Valor Nominal': nominal_values,
-    'Valor Real': real_values
-})
+# Gráfico de evolução
+months = np.arange(0, years*12+1)
+values = [simulate_investment(initial_amount, monthly_contrib, annual_rate/100, m/12) for m in months]
+df = pd.DataFrame({"Mês": months, "Valor Investido (R$)": values})
 
-# Transformar dados para Altair
-df_melted = df.melt('Ano', var_name='Tipo', value_name='Valor')
-
-chart = alt.Chart(df_melted).mark_line(point=True).encode(
-    x='Ano',
-    y='Valor',
-    color='Tipo',
-    tooltip=['Ano', 'Tipo', alt.Tooltip('Valor', format=".2f")]
-).interactive()
-
-st.subheader("Evolução do Investimento ao Longo dos Anos")
+chart = alt.Chart(df).mark_line(point=True).encode(
+    x="Mês",
+    y="Valor Investido (R$)"
+).properties(title="Evolução do Investimento ao Longo do Tempo")
 st.altair_chart(chart, use_container_width=True)
