@@ -1,20 +1,19 @@
-def simulate_investment(
-    initial_amount,
-    monthly_contribution,
-    months,
-    monthly_yield
-):
-    balance = initial_amount
-    history = []
+import pandas as pd
 
-    for month in range(1, months + 1):
-        balance += monthly_contribution
-        balance *= (1 + monthly_yield)
+def simulate_investment(initial_amt, monthly_amt, months, annual_rate):
+    # Taxa mensal equivalente
+    monthly_rate = (1 + annual_rate/100)**(1/12) - 1
+    data = []
+    balance = initial_amt
 
-        history.append({
-            "month": month,
-            "balance": round(balance, 2),
-            "monthly_income": round(balance * monthly_yield, 2)
-        })
+    # Loop para cada mês
+    for m in range(1, months + 1):
+        balance = balance * (1 + monthly_rate) + monthly_amt
+        data.append({"Mês": m, "Patrimônio": round(balance, 2)})
 
-    return history
+    # Se a lista estiver vazia, cria um valor padrão para não dar erro
+    if not data:
+        data = [{"Mês": 0, "Patrimônio": initial_amt}]
+        
+    return pd.DataFrame(data)
+    
