@@ -66,3 +66,11 @@ st.divider()
 
 # 5. Rodapé
 st.caption("InvestSim Stream - Desenvolvido para análise educacional de ativos.")
+csv = df_simulacao.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="📥 Baixar Planilha da Simulação",
+    data=csv,
+    file_name='simulacao_investimento.csv',
+    mime='text/csv',
+)
+
