@@ -1,5 +1,11 @@
-def real_return(nominal: float, inflation: float) -> float:
-    """Calcula a rentabilidade real usando a Equação de Fisher."""
-    # i_real = [(1 + i_nom) / (1 + i_inf)] - 1
-    return ((1 + nominal) / (1 + inflation)) - 1
-  
+# logic/returns.py
+
+def real_return(amount: float, rate: float, inflation: float) -> float:
+    """
+    Calcula o retorno real descontando a inflação.
+    amount    : Valor futuro nominal
+    rate      : Taxa de retorno anual nominal (em decimal)
+    inflation : Inflação anual (em decimal)
+    """
+    # Fórmula do retorno real aproximado
+    return amount / ((1 + inflation) ** (1))
