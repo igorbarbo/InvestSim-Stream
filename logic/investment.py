@@ -1,8 +1,10 @@
-# Simula o valor futuro de um investimento composto
-def simulate_investment(amount: float, rate: float, years: int) -> float:
+def simulate_investment(initial_amount, monthly_contrib, annual_rate, years):
     """
-    amount : Valor inicial investido
-    rate   : Taxa de retorno anual (em decimal, ex: 0.05 = 5%)
-    years  : Número de anos
+    Calcula o valor futuro de um investimento com aportes mensais e juros compostos.
     """
-    return amount * (1 + rate) ** years
+    months = int(years * 12)
+    value = initial_amount
+    for _ in range(months):
+        value += monthly_contrib
+        value *= (1 + annual_rate/12)
+    return round(value, 2)
