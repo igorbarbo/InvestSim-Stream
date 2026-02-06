@@ -1,15 +1,27 @@
 import streamlit as st
-from logic.investment import calcular_investimento
+import pandas as pd
+from logic.investment import calcular_investimento, obter_taxa_cenario
+from utils.formatters import format_brl
 
-st.title("💰 Simulação de Investimento")
-v_ini = st.number_input("Valor Inicial", 1000.0)
-taxa = st.number_input("Taxa Anual (%)", 10.0) / 100
-meses = st.number_input("Meses", 12)
+st.subheader("💰 Simulação de Investimentos")
 
-if st.button("Calcular"):
-    try:
-        res = calcular_investimento(v_ini, 0, taxa, meses)
-        st.metric("Resultado Estimado", f"R$ {res:,.2f}")
-    except Exception as e:
-        st.error(f"Erro no cálculo: {e}")
-        
+# Inputs
+perfil = st.selectbox("Perfil:", ["Conservador", "Moderado", "Agressivo"])
+v_inicial = st.number_input("Inicial (R$)", value=1000.0, step=100.0)
+v_mensal = st.number_input("Mensal (R$)", value=100.0, step=50.0)
+v_tempo = st.slider("Anos", 1, 35, 10)
+taxa = st.slider("Taxa Anual (%)", 1.0, 30.0, float(obter_taxa_cenario(perfil)))
+
+# Calcula
+df = calcular_investimento(v_inicial, v_mensal, taxa, v_tempo)
+
+final = df["Patrimônio Total"].iloc[-1]
+investido = df["Total Investido"].iloc[-1]
+ganho = final - investido
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Acumulado", format_brl(final))
+c2.metric("Total Investido", format_brl(investido))
+c3.metric("Ganho Total", format_brl(ganho), delta=f"{(ganho/investido)*100:.1f}%" if investido>0 else None)
+
+st.line_chart(df.set_index("Mês")[["Patrimônio Total", "Total Investido"]])
