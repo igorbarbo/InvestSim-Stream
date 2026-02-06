@@ -1,36 +1,57 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import altair as alt
+from logic.investment import calcular_investimento, obter_taxa_cenario
 
-# Importa lógica
-from logic.investment import simulate_investment
-from logic.returns import real_return
-from components.cards import display_main_metrics
+# Configuração da Página
+st.set_page_config(page_title="InvestSim Pro", layout="wide", page_icon="💰")
 
-st.set_page_config(page_title="InvestSim", layout="wide")
-st.title("Simulador de Investimentos 🚀")
+st.title("💰 InvestSim Pro")
+st.caption("A inteligência financeira para simular o seu futuro.")
 
-# Input do usuário
-initial_amount = st.number_input("Valor Inicial (R$)", min_value=0.0, value=1000.0)
-monthly_contrib = st.number_input("Contribuição Mensal (R$)", min_value=0.0, value=100.0)
-annual_rate = st.number_input("Retorno Anual (%)", min_value=0.0, value=10.0)
-years = st.number_input("Anos", min_value=1, max_value=50, value=10)
+# --- 1️⃣ LAYOUT EM COLUNAS ---
+col_input, col_output = st.columns([1, 2], gap="large")
 
-# Simula investimento
-future_value = simulate_investment(initial_amount, monthly_contrib, annual_rate/100, years)
-real_future_value = real_return(future_value, inflation_rate=0.04, years=years)  # inflação 4% como exemplo
+with col_input:
+    st.subheader("Configurações")
+    
+    # --- 5️⃣ CENÁRIOS (PERFIS) ---
+    perfil = st.selectbox(
+        "Selecione seu Perfil de Investimento",
+        ["Conservador", "Moderado", "Agressivo"],
+        help="Cada perfil sugere uma taxa anual baseada na média do mercado atual."
+    )
+    
+    taxa_sugerida = obter_taxa_cenario(perfil)
 
-# Mostra métricas
-display_main_metrics(future_value, real_future_value)
+    with st.container(border=True):
+        v_inicial = st.number_input("Investimento Inicial (R$)", value=1000.0, step=500.0)
+        v_mensal = st.number_input("Aporte Mensal (R$)", value=100.0, step=50.0)
+        v_taxa = st.slider("Taxa Anual Ajustada (%)", 1.0, 30.0, taxa_sugerida)
+        v_tempo = st.slider("Tempo (Anos)", 1, 35, 10)
+    
+    st.info(f"📌 No cenário **{perfil}**, sua taxa sugerida é de {taxa_sugerida}% ao ano.")
 
-# Gráfico de evolução
-months = np.arange(0, years*12+1)
-values = [simulate_investment(initial_amount, monthly_contrib, annual_rate/100, m/12) for m in months]
-df = pd.DataFrame({"Mês": months, "Valor Investido (R$)": values})
+with col_output:
+    # Processamento
+    df = calcular_investimento(v_inicial, v_mensal, v_taxa, v_tempo)
+    
+    # --- 2️⃣ CARDS INTELIGENTES ---
+    final_val = df['Patrimônio Total'].iloc[-1]
+    investido = df['Total Investido'].iloc[-1]
+    lucro = final_val - investido
 
-chart = alt.Chart(df).mark_line(point=True).encode(
-    x="Mês",
-    y="Valor Investido (R$)"
-).properties(title="Evolução do Investimento ao Longo do Tempo")
-st.altair_chart(chart, use_container_width=True)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Patrimônio Final", f"R$ {final_val:,.2f}", help="Valor total ao fim do prazo.")
+    c2.metric("Total Investido", f"R$ {investido:,.2f}", help="Dinheiro que saiu do seu bolso.")
+    c3.metric("Rendimento", f"R$ {lucro:,.2f}", delta=f"{(lucro/investido)*100:.1f}% de lucro")
+
+    # --- 4️⃣ GRÁFICO COMPARATIVO ---
+    st.divider()
+    st.write("### Evolução: Juros Compostos vs. Capital Investido")
+    
+    # Preparando gráfico com nomes limpos
+    chart_data = df.set_index("Mês")[["Patrimônio Total", "Total Investido"]]
+    st.line_chart(chart_data, width='stretch')
+    
+    st.caption("💡 Note como a distância entre as linhas aumenta com o tempo: isso é o efeito dos juros sobre juros.")
+    
