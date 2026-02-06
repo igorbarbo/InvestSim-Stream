@@ -1,13 +1,14 @@
 import streamlit as st
 from logic.market_data import get_dados_ativo
+
 st.subheader("📈 Análise de Ativos")
 
-ticker = st.text_input("Ticker (ex: PETR4)", value="PETR4")
+ticker = st.text_input("Ticker (ex: PETR4, BOVA11, VNQ)", value="PETR4.SA")
 
 if ticker:
     with st.spinner("Buscando dados do ativo..."):
         dados = get_dados_ativo(ticker)
-
+    
     if dados.empty:
         st.error("❌ Não foi possível obter dados do ativo no momento.")
     else:
