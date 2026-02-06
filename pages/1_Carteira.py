@@ -1,34 +1,78 @@
 import streamlit as st
-from logic.investment import obter_taxa_cenario
+import pandas as pd
+from logic.investment import calcular_investimento, obter_taxa_cenario
+
+st.set_page_config(page_title="Carteira", layout="wide")
+st.title("📊 Carteira de Investimentos")
 
 # ===============================
-# CONTROLE DE ESTADO (OBRIGATÓRIO)
+# SESSION STATE
 # ===============================
 if "perfil" not in st.session_state:
     st.session_state.perfil = "Conservador"
 
 if "taxa" not in st.session_state:
-    st.session_state.taxa = obter_taxa_cenario(st.session_state.perfil)import streamlit as st
+    st.session_state.taxa = obter_taxa_cenario(st.session_state.perfil)
 
-st.title("📊 Carteira de Investimentos")
+# ===============================
+# CONTROLES
+# ===============================
+def atualizar_taxa():
+    st.session_state.taxa = obter_taxa_cenario(st.session_state.perfil)
 
-st.write("Defina a distribuição da sua carteira:")
+st.selectbox(
+    "Perfil:",
+    ["Conservador", "Moderado", "Agressivo"],
+    key="perfil",
+    on_change=atualizar_taxa
+)
 
-renda_fixa = st.slider("Renda Fixa (%)", 0, 100, 40)
-acoes = st.slider("Ações (%)", 0, 100, 40)
-cripto = st.slider("Cripto (%)", 0, 100, 20)
+st.slider(
+    "Taxa Anual (%)",
+    min_value=1.0,
+    max_value=30.0,
+    step=0.1,
+    key="taxa"
+)
 
-total = renda_fixa + acoes + cripto
+v_inicial = st.number_input("Inicial (R$)", value=1000.0, min_value=0.0, step=100.0)
+v_mensal = st.number_input("Mensal (R$)", value=100.0, min_value=0.0, step=50.0)
+v_tempo = st.slider("Anos", min_value=1, max_value=35, value=10)
 
-if total != 100:
-    st.error(f"A soma precisa ser 100%. Atualmente: {total}%")
-else:
-    st.success("Carteira válida!")
+# ===============================
+# CÁLCULO
+# ===============================
+df = calcular_investimento(
+    inicial=v_inicial,
+    mensal=v_mensal,
+    taxa_anual=st.session_state.taxa,
+    anos=v_tempo
+)
 
-st.markdown("---")
-st.write("📌 Distribuição atual:")
-st.write({
-    "Renda Fixa": f"{renda_fixa}%",
-    "Ações": f"{acoes}%",
-    "Cripto": f"{cripto}%"
+if df.empty:
+    st.warning("Não foi possível calcular o investimento.")
+    st.stop()
+
+df = df.rename(columns={
+    "Mês": "Mes",
+    "Patrimônio Total": "Patrimonio Total"
 })
+
+final = df["Patrimonio Total"].iloc[-1]
+investido = df["Total Investido"].iloc[-1]
+ganho = final - investido
+
+# ===============================
+# RESULTADOS
+# ===============================
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Acumulado", f"R$ {final:,.2f}")
+c2.metric("Total Investido", f"R$ {investido:,.2f}")
+c3.metric(
+    "Ganho Total",
+    f"R$ {ganho:,.2f}",
+    delta=f"{(ganho / investido) * 100:.1f}%" if investido > 0 else None
+)
+
+df_chart = df.sort_values("Mes").set_index("Mes").copy()
+st.line_chart(df_chart[["Patrimonio Total", "Total Investido"]])
