@@ -2,7 +2,7 @@ import pandas as pd
 
 def calcular_investimento(inicial, mensal, taxa_anual, anos):
     """Calcula a evolução patrimonial detalhada."""
-    meses = anos * 12
+    meses = int(anos * 12)
     taxa_mensal = (1 + taxa_anual/100)**(1/12) - 1
     
     saldo = inicial
@@ -22,11 +22,11 @@ def calcular_investimento(inicial, mensal, taxa_anual, anos):
     return pd.DataFrame(dados)
 
 def obter_taxa_cenario(perfil):
-    """Retorna taxas médias baseadas no perfil de risco."""
+    """Retorna taxas sugeridas por perfil."""
     cenarios = {
         "Conservador": 10.5,
-        "Moderado": 13.0,
-        "Agressivo": 16.5
+        "Moderado": 13.5,
+        "Agressivo": 17.0
     }
     return cenarios.get(perfil, 10.0)
     
