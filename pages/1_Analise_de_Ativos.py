@@ -1,34 +1,12 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-from yfinance.exceptions import YFRateLimitError
+st.subheader("📈 Análise de Ativos")
 
-st.set_page_config(page_title="Análise de Ativos", layout="wide")
-st.title("📈 Análise de Ativos")
-
-ticker = st.text_input("Ticker (ex: PETR4.SA)", value="PETR4.SA")
-
-@st.cache_data(ttl=3600)  # cache de 1 hora (OBRIGATÓRIO)
-def carregar_dados(ticker):
-    ativo = yf.Ticker(ticker)
-    return ativo.history(period="1y")
+ticker = st.text_input("Ticker (ex: PETR4)", value="PETR4")
 
 if ticker:
-    with st.spinner("Acessando dados do Yahoo Finance..."):
-        try:
-            dados = carregar_dados(ticker)
+    with st.spinner("Buscando dados do ativo..."):
+        dados = get_dados_ativo(ticker)
 
-            if dados.empty:
-                st.warning("Nenhum dado encontrado para este ativo.")
-            else:
-                st.subheader(f"Desempenho de {ticker} (12 meses)")
-                st.line_chart(dados["Close"])
-
-        except YFRateLimitError:
-            st.error(
-                "🚫 Limite de requisições do Yahoo Finance atingido.\n\n"
-                "Aguarde alguns minutos e recarregue a página."
-            )
-
-        except Exception as e:
-            st.error(f"Erro ao buscar dados: {e}")
+    if dados.empty:
+        st.error("❌ Não foi possível obter dados do ativo no momento.")
+    else:
+        st.line_chart(dados["Close"])
