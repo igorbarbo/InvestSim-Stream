@@ -1,41 +1,43 @@
 import streamlit as st
 import yfinance as yf
-import requests_cache
-from requests import Session
-from datetime import timedelta
-
-# Configura uma sessão com cache (isso evita o Rate Limit)
-# Se você pedir o mesmo ticker em menos de 1 hora, ele usa o dado salvo
-session = requests_cache.CachedSession('yfinance.cache', expire_after=timedelta(hours=1))
-session.headers.update({'User-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+import pandas as pd
+import requests
 
 st.title("🔍 Analisador B3 (Ações e FIIs)")
 
-ticker = st.text_input("Digite o Ticker (ex: BBAS3.SA):", "PETR4.SA").upper()
+# Função para buscar dados com tratamento de erro de limite
+def buscar_dados(ticker):
+    try:
+        # Criamos uma sessão que finge ser um navegador Chrome
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
+        
+        ativo = yf.Ticker(ticker, session=session)
+        # Usamos period='1mo' primeiro para testar a conexão, depois '1y'
+        df = ativo.history(period="1y")
+        return df, ativo
+    except Exception as e:
+        return None, str(e)
+
+ticker_input = st.text_input("Digite o Ticker (ex: VALE3.SA):", "PETR4.SA").upper()
 
 if st.button("Analisar Ativo"):
-    with st.spinner(f"Consultando {ticker}..."):
-        try:
-            # Passamos a sessão configurada para o yfinance
-            ativo = yf.Ticker(ticker, session=session)
+    with st.spinner("Solicitando dados ao servidor..."):
+        dados, erro = buscar_dados(ticker_input)
+        
+        if dados is not None and not dados.empty:
+            st.success(f"Dados de {ticker_input} carregados com sucesso!")
+            st.line_chart(dados['Close'])
             
-            # Tenta buscar os dados
-            dados = ativo.history(period="1y")
-            
-            if not dados.empty:
-                st.subheader(f"Desempenho de {ticker}")
-                st.line_chart(dados['Close'])
-                
-                # Exibe dividendos se houver
-                if not ativo.dividends.empty:
-                    st.subheader("💰 Dividendos Recentes")
-                    st.bar_chart(ativo.dividends.tail(10))
+            # Mostra o preço atual
+            preco_atual = dados['Close'].iloc[-1]
+            st.metric("Preço Atual", f"R$ {preco_atual:.2f}")
+        else:
+            if "429" in str(erro) or "Too Many Requests" in str(erro):
+                st.error("🚨 Limite atingido! O Yahoo Finance bloqueou o acesso temporário.")
+                st.info("💡 **Dica:** Tente escrever o ticker de forma diferente (ex: ITUB4.SA) ou aguarde 2 minutos. Servidores gratuitos compartilham o mesmo acesso.")
             else:
-                st.error("Dados vazios. Verifique se o ticker está correto (ex: VALE3.SA)")
-                
-        except Exception as e:
-            if "RateLimitError" in str(e) or "429" in str(e):
-                st.error("🚨 O Yahoo Finance limitou o acesso temporariamente. Aguarde 1 minuto ou tente outro ticker.")
-            else:
-                st.error(f"Ocorreu um erro: {e}")
+                st.error(f"Erro ao buscar: {erro}")
                 
