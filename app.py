@@ -76,6 +76,7 @@ with col_input:
 # ===============================
 with col_output:
 
+    # Calcula investimento usando taxa atual do session_state
     df = calcular_investimento(
         inicial=v_inicial,
         mensal=v_mensal,
@@ -87,7 +88,10 @@ with col_output:
         st.warning("Não foi possível calcular o investimento.")
         st.stop()
 
-    final = df["Patrimônio Total"].iloc[-1]
+    # Ajuste: renomeando colunas sem acento para evitar SyntaxError
+    df = df.rename(columns={"Mês": "Mes", "Patrimônio Total": "Patrimonio Total"})
+
+    final = df["Patrimonio Total"].iloc[-1]
     investido = df["Total Investido"].iloc[-1]
     ganho = final - investido
 
@@ -100,5 +104,6 @@ with col_output:
         delta=f"{(ganho / investido) * 100:.1f}%" if investido > 0 else None
     )
 
-    df_chart = df.sort_values("Mês").set_index("Mês")
-    st.line_chart(df_chart[["Patrimônio Total", "Total Investido"]])
+    # Ordena e plota gráfico
+    df_chart = df.sort_values("Mes").set_index("Mes").copy()
+    st.line_chart(df_chart[["Patrimonio Total", "Total Investido"]])
