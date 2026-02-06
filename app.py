@@ -2,30 +2,103 @@ import streamlit as st
 import pandas as pd
 from logic.investment import calcular_investimento, obter_taxa_cenario
 
-st.set_page_config(page_title="InvestSim Pro", layout="wide")
+# ===============================
+# CONFIGURAÇÃO DA PÁGINA
+# ===============================
+st.set_page_config(
+    page_title="InvestSim Pro",
+    layout="wide"
+)
+
 st.title("💰 InvestSim Pro")
 
+# ===============================
+# CONTROLE DE ESTADO (SESSION)
+# ===============================
+if "perfil" not in st.session_state:
+    st.session_state.perfil = "Conservador"
+
+if "taxa" not in st.session_state:
+    st.session_state.taxa = obter_taxa_cenario(st.session_state.perfil)
+
+# ===============================
+# LAYOUT PRINCIPAL
+# ===============================
 col_input, col_output = st.columns([1, 2], gap="large")
 
+# ===============================
+# COLUNA DE INPUTS
+# ===============================
 with col_input:
     st.subheader("Configurações")
-    perfil = st.selectbox("Perfil:", ["Conservador", "Moderado", "Agressivo"])
-    taxa_sug = obter_taxa_cenario(perfil)
-    
-    v_inicial = st.number_input("Inicial (R$)", value=1000.0)
-    v_mensal = st.number_input("Mensal (R$)", value=100.0)
-    v_taxa = st.slider("Taxa Anual (%)", 1.0, 30.0, taxa_sug)
-    v_tempo = st.slider("Anos", 1, 35, 10)
 
+    def atualizar_taxa():
+        st.session_state.taxa = obter_taxa_cenario(st.session_state.perfil)
+
+    st.selectbox(
+        "Perfil:",
+        ["Conservador", "Moderado", "Agressivo"],
+        key="perfil",
+        on_change=atualizar_taxa
+    )
+
+    v_inicial = st.number_input(
+        "Inicial (R$)",
+        value=1000.0,
+        min_value=0.0,
+        step=100.0
+    )
+
+    v_mensal = st.number_input(
+        "Mensal (R$)",
+        value=100.0,
+        min_value=0.0,
+        step=50.0
+    )
+
+    st.slider(
+        "Taxa Anual (%)",
+        min_value=1.0,
+        max_value=30.0,
+        step=0.1,
+        key="taxa"
+    )
+
+    v_tempo = st.slider(
+        "Anos",
+        min_value=1,
+        max_value=35,
+        value=10
+    )
+
+# ===============================
+# COLUNA DE RESULTADOS
+# ===============================
 with col_output:
-    df = calcular_investimento(v_inicial, v_mensal, v_taxa, v_tempo)
-    
-    final = df['Patrimônio Total'].iloc[-1]
-    investido = df['Total Investido'].iloc[-1]
-    
-    c1, c2 = st.columns(2)
+
+    df = calcular_investimento(
+        inicial=v_inicial,
+        mensal=v_mensal,
+        taxa_anual=st.session_state.taxa,
+        anos=v_tempo
+    )
+
+    if df.empty:
+        st.warning("Não foi possível calcular o investimento.")
+        st.stop()
+
+    final = df["Patrimônio Total"].iloc[-1]
+    investido = df["Total Investido"].iloc[-1]
+    ganho = final - investido
+
+    c1, c2, c3 = st.columns(3)
     c1.metric("Total Acumulado", f"R$ {final:,.2f}")
     c2.metric("Total Investido", f"R$ {investido:,.2f}")
-    
-    st.line_chart(df.set_index("Mês")[["Patrimônio Total", "Total Investido"]])
-    
+    c3.metric(
+        "Ganho Total",
+        f"R$ {ganho:,.2f}",
+        delta=f"{(ganho / investido) * 100:.1f}%" if investido > 0 else None
+    )
+
+    df_chart = df.sort_values("Mês").set_index("Mês")
+    st.line_chart(df_chart[["Patrimônio Total", "Total Investido"]])
