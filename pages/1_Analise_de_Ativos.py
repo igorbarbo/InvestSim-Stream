@@ -1,18 +1,19 @@
 import streamlit as st
 import yfinance as yf
 
-st.set_page_config(page_title="Análise", layout="wide")
 st.title("🔍 Análise de Ativos")
-
-ticker = st.text_input("Digite o ticker (ex: PETR4.SA):", "VALE3.SA").upper()
+# Valor padrão seguro para evitar erro inicial
+ticker = st.text_input("Ticker (ex: ITUB4.SA):", "PETR4.SA").upper()
 
 if st.button("Buscar Dados"):
-    with st.spinner("Consultando Yahoo Finance..."):
-        dados = yf.Ticker(ticker).history(period="1y")
+    with st.spinner("Conectando ao Yahoo Finance..."):
+        acao = yf.Ticker(ticker)
+        # Busca histórico para garantir que o DataFrame não venha vazio
+        dados = acao.history(period="1y")
+        
         if not dados.empty:
             st.line_chart(dados['Close'])
-            preco_atual = dados['Close'].iloc[-1]
-            st.metric("Preço Atual", f"R$ {preco_atual:.2f}")
+            st.success(f"Dados de {ticker} carregados.")
         else:
-            st.error("Ticker não encontrado. Verifique se usou o sufixo .SA")
+            st.error(f"Erro: Não encontramos dados para {ticker}. Verifique a internet ou o código.")
             
