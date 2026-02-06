@@ -1,15 +1,33 @@
 import yfinance as yf
 import pandas as pd
 
-def get_price_history(ticker, period="5y"):
-    """Busca histórico de preços de um ativo."""
-    try:
-        # Se o ticker não tiver .SA e for brasileiro, yfinance pode falhar
-        # Mas vamos manter simples para o teste
-        data = yf.download(ticker, period=period)
-        if data.empty:
-            return None
-        return data["Adj Close"]
-    except Exception as e:
+
+def get_price_history(ticker: str, period: str = "5y") -> pd.Series | None:
+    """
+    Busca histórico de preços ajustados (Adj Close) de um ativo.
+    Retorna None se não houver dados.
+    """
+
+    if not ticker:
         return None
-        
+
+    ticker = ticker.strip().upper()
+
+    try:
+        data = yf.download(
+            ticker,
+            period=period,
+            progress=False,
+            auto_adjust=False
+        )
+
+        if data is None or data.empty:
+            return None
+
+        if "Adj Close" not in data.columns:
+            return None
+
+        return data["Adj Close"].dropna()
+
+    except Exception:
+        return None
