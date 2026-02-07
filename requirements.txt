@@ -8,7 +8,7 @@ numpy==1.26.0  # compatível com pandas 2.2.3 no Python 3.13
 # YAML parser (compatível com Python 3.13)
 PyYAML==5.4.1
 
-# Bibliotecas de suporte do Streamlit
+# Outros utilitários que o Streamlit precisa
 rich==14.3.2
 markdown-it-py==4.0.0
 mdurl==0.1.2
