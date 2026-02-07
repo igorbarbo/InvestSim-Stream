@@ -1,111 +1,98 @@
-# --- pages/_Super_Dashboard.py ---
-import streamlit as st
-import pandas as pd
-import numpy as np
-import altair as alt
+# _Super_Dashboard_Visual.py
+
 import yfinance as yf
-import os
-import time
-import pickle
+import pandas as pd
+import streamlit as st
 
-from utils.finance_utils import retorno_mensal, volatilidade_anual, max_drawdown, sharpe
+# Configuração da página
+st.set_page_config(page_title="InvestSim Ultra Ninja", layout="wide")
+st.title("🦸‍♂️ InvestSim Ultra Ninja – Dashboard Visual")
+st.markdown("📈 Máximo desempenho: Bola de Neve • Dividendos Reais • Ranking • Benchmark")
 
-st.set_page_config(page_title="🦸‍♂️ InvestSim Ultra Ninja", layout="wide")
-st.title("🦸‍♂️ InvestSim — Ultra Ninja Optimizado")
-st.markdown("Máximo desempenho para Streamlit Cloud | Bola de Neve • Dividendos Reais • Ranking • Benchmarks")
+# Input de tickers
+tickers_input = st.text_input("Digite os tickers separados por vírgula:", "AAPL,MSFT,GOOGL")
+ativos_final = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
 
-# --- Sidebar: seleção de tickers ---
-st.sidebar.header("Seleção de Ativos")
-ativos_input = st.sidebar.text_area(
-    "Digite os tickers separados por vírgula (ex: AAPL, MSFT, TSLA, ITUB3.SA)",
-    value="AAPL, MSFT, TSLA"
-)
-ativos_final = [t.strip().upper() for t in ativos_input.split(",")]
-
-# --- Função para carregar dividendos com cache e retry ---
-CACHE_DIR = "cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-def get_dividendo_cache(ticker):
-    cache_file = os.path.join(CACHE_DIR, f"{ticker}_div.pkl")
-    if os.path.exists(cache_file):
-        with open(cache_file, "rb") as f:
-            df = pickle.load(f)
+# ========================= CACHE =========================
+@st.cache_data(ttl=3600)
+def get_dividendos(ticker):
+    try:
+        df = yf.Ticker(ticker).dividends
+        df.index = pd.to_datetime(df.index)
+        df = df.rename(ticker)
         return df
-    for attempt in range(5):
+    except Exception as e:
+        st.warning(f"Não foi possível carregar dividendos de {ticker}: {e}")
+        return pd.Series(dtype='float64')
+
+@st.cache_data(ttl=3600)
+def get_preco(ticker):
+    try:
+        hist = yf.Ticker(ticker).history(period="1d")
+        return hist['Close'].iloc[-1] if not hist.empty else None
+    except Exception:
+        return None
+
+# ========================= BOLA DE NEVE =========================
+def bola_de_neve(divid_df, precos):
+    reinvest = pd.DataFrame(index=divid_df.index)
+    for t in divid_df.columns:
+        reinvest[t] = (divid_df[t].cumsum() + precos.get(t, 0))  # seguro contra None
+    return reinvest
+
+# ========================= MAIN =========================
+if ativos_final:
+    dividendos_list = [get_dividendos(t) for t in ativos_final]
+
+    if any(not df.empty for df in dividendos_list):
+        df_div = pd.concat(dividendos_list, axis=1).fillna(0)
+
+        # ====== LAYOUT: 3 COLUNAS ======
+        col1, col2, col3 = st.columns([3,3,4])
+
+        # COL1: Tabela de Dividendos
+        with col1:
+            st.subheader("📊 Dividendos")
+            st.dataframe(df_div)
+
+        # COL2: Dividendos por ano
+        with col2:
+            df_div_ano = df_div.groupby(df_div.index.year).sum()
+            st.subheader("📈 Dividendos por Ano")
+            st.bar_chart(df_div_ano)
+
+        # COL3: Ranking e Alertas
+        with col3:
+            precos = {t: get_preco(t) for t in ativos_final}
+            div_anuais = df_div.resample('Y').sum().iloc[-1]
+            dividend_yield = {t: div_anuais[t]/precos.get(t, 1) for t in ativos_final}  # seguro contra None
+            df_yield = pd.DataFrame.from_dict(dividend_yield, orient='index', columns=['Dividend Yield'])
+            df_yield.sort_values('Dividend Yield', ascending=False, inplace=True)
+
+            st.subheader("🏆 Ranking Dividend Yield")
+            st.dataframe(df_yield.style.format("{:.2%}"))
+
+            alert_thresh = st.slider("⚡ Alertas de Dividendos (%)", 0.5, 10.0, 3.0)
+            alert_div = df_yield[df_yield['Dividend Yield'] > alert_thresh/100]
+            if not alert_div.empty:
+                st.warning(f"Ativos com Dividend Yield acima de {alert_thresh}%")
+                st.dataframe(alert_div.style.format("{:.2%}"))
+
+        # ====== BOLA DE NEVE ======
+        df_bola = bola_de_neve(df_div, precos)
+        if st.checkbox("💰 Mostrar gráfico Bola de Neve"):
+            st.subheader("💰 Crescimento com Bola de Neve")
+            st.line_chart(df_bola)
+
+        # ====== BENCHMARK ======
+        st.subheader("📊 Benchmark: S&P500")
         try:
-            df = yf.Ticker(ticker).dividends
-            if df.empty:
-                df = pd.Series(dtype=float)
-            with open(cache_file, "wb") as f:
-                pickle.dump(df, f)
-            return df
-        except Exception as e:
-            time.sleep(1 + attempt*0.5)  # espera crescente
-    st.warning(f"Falha ao obter dividendos de {ticker}")
-    return pd.Series(dtype=float)
-
-# --- Carregando dividendos ---
-st.write("⏳ Carregando dividendos e preços históricos...")
-divs_list = []
-precos_list = []
-
-for t in ativos_final:
-    div = get_dividendo_cache(t)
-    divs_list.append(div.rename(t))
-    # Preço histórico diário últimos 5 anos
-    precos = yf.download(t, period="5y", progress=False)["Adj Close"]
-    precos_list.append(precos.rename(t))
-    time.sleep(0.5)  # evitar rate limit
-
-df_div = pd.concat(divs_list, axis=1)
-df_precos = pd.concat(precos_list, axis=1)
-
-st.subheader("📊 Dividendos Recentes")
-st.dataframe(df_div.tail(10))
-
-# --- Bola de neve dos dividendos ---
-st.subheader("💰 Bola de Neve Acumulada")
-df_bolaneve = df_div.fillna(0).cumsum()
-st.line_chart(df_bolaneve)
-
-# --- Heatmap de contribuição de dividendos ---
-st.subheader("🔥 Heatmap de Dividendos por Ativo")
-df_heat = df_div.fillna(0).reset_index().melt(id_vars="Date", var_name="Ticker", value_name="Dividendo")
-heatmap = alt.Chart(df_heat).mark_rect().encode(
-    x='Date:T',
-    y='Ticker:N',
-    color='Dividendo:Q'
-).properties(width=800, height=300)
-st.altair_chart(heatmap, use_container_width=True)
-
-# --- Métricas financeiras ---
-st.subheader("📈 Métricas de Performance")
-st.write("Retorno Mensal")
-st.dataframe(retorno_mensal(df_precos).tail(5))
-
-st.write("Volatilidade Anual")
-st.dataframe(volatilidade_anual(df_precos))
-
-st.write("Max Drawdown")
-st.dataframe(max_drawdown(df_precos))
-
-st.write("Sharpe Ratio")
-st.dataframe(sharpe(df_precos))
-
-# --- Ranking de dividendos ---
-st.subheader("🏆 Ranking de Dividendos Acumulados")
-ranking = df_div.sum().sort_values(ascending=False)
-st.bar_chart(ranking)
-
-# --- Benchmarks: Ibov e S&P500 ---
-st.subheader("📊 Benchmarks")
-benchmarks = {"^BVSP": "IBOV", "^GSPC": "S&P500"}
-bench_list = []
-for sym, name in benchmarks.items():
-    data = yf.download(sym, period="5y", progress=False)["Adj Close"].rename(name)
-    bench_list.append(data)
-df_bench = pd.concat(bench_list, axis=1)
-st.line_chart(df_bench)
-
-st.success("✅ Dashboard carregado com sucesso! Ultra Ninja nível 5 🚀")
+            sp500 = yf.Ticker("^GSPC").history(period="1y")['Close']
+            sp500_norm = sp500 / sp500.iloc[0] * 100
+            st.line_chart(sp500_norm)
+        except Exception:
+            st.info("Não foi possível carregar dados do benchmark S&P500")
+    else:
+        st.warning("Não foi possível carregar dividendos para os tickers fornecidos.")
+else:
+    st.info("Digite pelo menos um ticker para iniciar a análise.")
