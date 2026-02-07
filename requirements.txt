@@ -1,5 +1,5 @@
-import streamlit as st
-import pandas as pd
-import yfinance as yf
-import plotly.express as px
-from streamlit_gsheets import GSheetsConnection
+streamlit
+pandas
+yfinance
+plotly
+st-gsheets-connection
