@@ -3,9 +3,9 @@ streamlit==1.54.0
 
 # Data
 pandas==2.2.3
-numpy==1.24.4  # compatível com pandas 2.2.3 no Python 3.11
+numpy==1.26.0  # compatível com pandas 2.2.3 no Python 3.11
 
-# YAML parser (compatível com Python 3.11)
+# YAML parser
 PyYAML==6.0
 
 # Outros utilitários que o Streamlit precisa
