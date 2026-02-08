@@ -7,8 +7,9 @@ import numpy as np
 # --- 1. CONFIGURAÇÃO PWA E PÁGINA ---
 st.set_page_config(page_title="InvestSim Expert", layout="wide", page_icon="📈")
 
-# Link para o seu manifest.json (Use o link 'RAW' do GitHub)
-link_manifest = "https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPOSITORIO/main/manifest.json"
+# Link RAW personalizado para o seu usuário: Igorbarbo
+# Certifique-se de que o nome do repositório (investsim-stream2) está correto abaixo
+link_manifest = "https://raw.githubusercontent.com/Igorbarbo/investsim-stream2/main/manifest.json"
 
 st.markdown(f"""
     <link rel="manifest" href="{link_manifest}">
@@ -58,7 +59,7 @@ tab_dash, tab_radar, tab_expert, tab_risco, tab_edit = st.tabs([
 
 # --- ABA 1: DASHBOARD ---
 with tab_dash:
-    st.title("💎 Patrimônio Expert")
+    st.title(f"💎 Patrimônio de {st.session_state.get('user_name', 'Igor')}")
     aporte = st.sidebar.number_input("Aporte Mensal (R$)", value=3000.0)
     
     if st.button("🔄 Sincronizar Mercado"):
@@ -88,7 +89,6 @@ with tab_radar:
         df_r = st.session_state.df_carteira.copy()
         for t in df_r['Ativo'].unique():
             divs = yf.Ticker(t).dividends
-            # Correção 'YE' para compatibilidade total
             df_r.loc[df_r['Ativo']==t, 'Div_Anual'] = divs.tail(365).sum() if not divs.empty else 0
         
         df_r['Renda_Mes'] = (df_r['QTD'] * df_r['Div_Anual']) / 12
