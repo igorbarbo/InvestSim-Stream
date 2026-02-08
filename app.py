@@ -3,85 +3,83 @@ import pandas as pd
 import yfinance as yf
 import plotly.express as px
 
-st.set_page_config(page_title="InvestSim - Montagem Real", layout="wide", page_icon="🎯")
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="InvestSim Pro v4.0", layout="wide", page_icon="💎")
 
-# --- ESTILO E TÍTULO ---
-st.title("🎯 Montagem de Carteira Híbrida (Dia 1)")
-st.subheader("Foco: Renda de 0,8%/mês + Diversificação")
+# --- FUNÇÃO DE DADOS ---
+def carregar_dados():
+    # Substitua pelo seu link real do Google Sheets (CSV)
+    url = "https://docs.google.com/spreadsheets/d/1TWfuEvIn9YbSzEyFHKvWWD4XwppHhlj9Cm1RE6BweF8/gviz/tq?tqx=out:csv"
+    try:
+        df = pd.read_csv(url)
+        df.columns = [c.strip() for c in df.columns]
+        return df.dropna(subset=['Ativo'])
+    except:
+        return pd.DataFrame(columns=['Ativo', 'QTD', 'Preço Médio'])
 
-# --- SIDEBAR: O APORTE DE HOJE ---
-st.sidebar.header("📥 Seu Aporte")
-aporte_disponivel = st.sidebar.number_input("Quanto vai investir hoje? (R$)", value=3000.0)
+# Inicializa o estado da carteira no navegador
+if 'df_carteira' not in st.session_state:
+    st.session_state.df_carteira = carregar_dados()
 
-# --- CONFIGURAÇÃO DA CARTEIRA IDEAL ---
-# Definimos os ativos "modelo" que você escolheu
-carteira_modelo = {
-    'FIIs (40%)': ['HGLG11.SA', 'MXRF11.SA'],
-    'Ações BR (30%)': ['PETR4.SA', 'BBAS3.SA', 'TAEE11.SA'],
-    'Internacional (30%)': ['IVVB11.SA', 'AAPL34.SA']
-}
+# --- NAVEGAÇÃO POR ABAS ---
+aba1, aba2 = st.tabs(["📊 Dashboard e Aportes", "📂 Editar Minha Carteira"])
 
-if st.button("🚀 Gerar Minha Lista de Compras"):
-    with st.spinner("Buscando preços atuais no mercado..."):
-        # 1. Coleta de Preços
-        todos_tickers = [item for sublist in carteira_modelo.values() for item in sublist]
-        dados = yf.download(todos_tickers, period="1d", progress=False)['Close']
-        precos = {t: float(dados[t].iloc[-1]) for t in todos_tickers}
+# --- ABA 1: DASHBOARD E INTELIGÊNCIA ---
+with aba1:
+    st.title("💎 Gestão de Carteira Inteligente")
+    
+    # Configurações de Aporte na lateral
+    valor_aporte = st.sidebar.number_input("Aporte Mensal (R$)", value=3000.0)
+    taxa_mensal = 0.008 # 0,8%
 
-        # 2. Distribuição do Dinheiro (Aporte de R$ 3000)
-        # 40% FIIs = 1200 | 30% BR = 900 | 30% Inter = 900
-        distribuicao = {
-            'FII (40%)': aporte_disponivel * 0.40,
-            'Ações BR (30%)': aporte_disponivel * 0.30,
-            'Internacional (30%)': aporte_disponivel * 0.30
-        }
-
-        # 3. Montagem da Tabela de Compras
-        lista_compras = []
-        
-        # Lógica para FIIs
-        valor_por_fii = distribuicao['FII (40%)'] / len(carteira_modelo['FIIs (40%)'])
-        for ticker in carteira_modelo['FIIs (40%)']:
-            preco = precos[ticker]
-            qtd = int(valor_por_fii / preco)
-            lista_compras.append([ticker, 'FII', preco, qtd, qtd * preco])
-
-        # Lógica para Ações BR
-        valor_por_acao = distribuicao['Ações BR (30%)'] / len(carteira_modelo['Ações BR (30%)'])
-        for ticker in carteira_modelo['Ações Brasil (30%)' if 'Ações Brasil (30%)' in carteira_modelo else 'Ações BR (30%)']:
-            # Pequeno ajuste no nome da chave caso necessário
-            pass 
-        # Re-ajustando loop para evitar erros de chave:
-        for ticker in carteira_modelo['Ações BR (30%)']:
-            preco = precos[ticker]
-            qtd = int(valor_por_acao / preco)
-            lista_compras.append([ticker, 'Ações BR', preco, qtd, qtd * preco])
-
-        # Lógica para Internacional
-        valor_por_inter = distribuicao['Internacional (30%)'] / len(carteira_modelo['Internacional (30%)'])
-        for ticker in carteira_modelo['Internacional (30%)']:
-            preco = precos[ticker]
-            qtd = int(valor_por_inter / preco)
-            lista_compras.append([ticker, 'Internacional', preco, qtd, qtd * preco])
-
-        df_compras = pd.DataFrame(lista_compras, columns=['Ativo', 'Classe', 'Preço Unit.', 'QTD p/ Comprar', 'Total Sugerido'])
-
-        # --- EXIBIÇÃO ---
-        c1, c2 = st.columns([1, 1])
-
-        with c1:
-            st.write("### 🛒 O que comprar agora:")
-            st.dataframe(df_compras.style.format({'Preço Unit.': 'R$ {:.2f}', 'Total Sugerido': 'R$ {:.2f}'}))
+    if st.button("🚀 Sincronizar e Calcular"):
+        with st.spinner("Buscando cotações e calculando lucro..."):
+            df_calc = st.session_state.df_carteira.copy()
             
-            st.success(f"**Total Planejado:** R$ {df_compras['Total Sugerido'].sum():,.2f}")
-            st.info(f"**Renda Mensal Estimada deste Aporte:** R$ {df_compras['Total Sugerido'].sum() * 0.008:,.2f}")
+            # Busca cotações e dólar
+            cotacao_dolar = float(yf.download("USDBRL=X", period="1d", progress=False)['Close'].iloc[-1])
+            tickers = df_calc['Ativo'].unique().tolist()
+            dados_mercado = yf.download(tickers, period="1d", progress=False)['Close']
+            precos_dict = {t: float(dados_mercado[t].iloc[-1] if len(tickers) > 1 else dados_mercado.iloc[-1]) for t in tickers}
 
-        with c2:
-            st.write("### 📊 Divisão por Categoria")
-            fig = px.pie(df_compras, values='Total Sugerido', names='Classe', hole=0.5,
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig, use_container_width=True)
+            # Cálculos de Patrimônio e Lucro
+            df_calc['Preço BRL'] = df_calc['Ativo'].apply(lambda x: precos_dict.get(x, 0) * (cotacao_dolar if not x.endswith(".SA") else 1))
+            df_calc['Total Atual'] = df_calc['QTD'] * df_calc['Preço BRL']
+            df_calc['Investido'] = df_calc['QTD'] * df_calc['Preço Médio']
+            df_calc['Lucro R$'] = df_calc['Total Atual'] - df_calc['Investido']
+            
+            total_patrimonio = df_calc['Total Atual'].sum()
+            lucro_mensal = total_patrimonio * taxa_mensal
 
-        # MENSAGEM FINAL
-        st.warning("⚠️ **Dica:** Após comprar esses ativos na sua corretora, não esqueça de anotá-los na sua planilha do Google para o Dashboard acompanhar o lucro em tempo real!")
+            # Cards de Resumo
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Patrimônio Total", f"R$ {total_patrimonio:,.2f}")
+            c2.metric("Lucro Estimado/Mês", f"R$ {lucro_mensal:,.2f}")
+            c3.metric("Dólar hoje", f"R$ {cotacao_dolar:,.2f}")
+
+            # Gráficos
+            col_esq, col_dir = st.columns(2)
+            with col_esq:
+                st.plotly_chart(px.pie(df_calc, values='Total Atual', names='Ativo', hole=0.5, title="Divisão da Carteira"), use_container_width=True)
+            with col_dir:
+                st.plotly_chart(px.bar(df_calc, x='Ativo', y='Lucro R$', color='Lucro R$', color_continuous_scale='RdYlGn', title="Lucro por Ativo"), use_container_width=True)
+
+            st.success(f"Dica: Para manter 0,8% ao mês, seu próximo aporte deve ser de R$ {valor_aporte:,.2f}")
+
+# --- ABA 2: EDITOR DE DADOS ---
+with aba2:
+    st.title("📂 Gerenciar Ativos")
+    st.write("Edite os valores abaixo. Lembre-se: mudanças aqui são temporárias até que você salve na sua planilha oficial.")
+    
+    # O Editor de Dados
+    df_editado = st.data_editor(
+        st.session_state.df_carteira,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor_real"
+    )
+
+    if st.button("💾 Aplicar Mudanças no Dashboard"):
+        st.session_state.df_carteira = df_editado
+        st.success("Dados atualizados! Volte na aba do Dashboard e clique em Sincronizar.")
         
