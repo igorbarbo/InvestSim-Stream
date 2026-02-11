@@ -3,83 +3,87 @@ import plotly.express as px
 from datetime import datetime
 import sys
 import os
-import logging
 
-# 1. Observabilidade (Fase 2)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Ajuste de Caminhos
+# Ajuste de path para módulos
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    from src.data_engine import fetch_data, sync_prices
-    from src.analytics import process_metrics
-    from src.ai_agent import ask_ai
-except ImportError as e:
-    st.error(f"Erro de Módulo: {e}")
-    st.stop()
+from src.data_engine import fetch_data, sync_prices
+from src.analytics import process_metrics, convert_to_usd
+from src.ai_agent import ask_ai
+from src.backtesting import run_backtest
 
-st.set_page_config(page_title="Terminal Igorbarbo V5 Pro", layout="wide", page_icon="⚡")
+# --- FASE 3: SISTEMA DE LOGIN ---
+def check_auth():
+    if "auth" not in st.session_state:
+        st.session_state.auth = False
+    
+    if not st.session_state.auth:
+        st.title("🔒 Terminal Igorbarbo V5 Pro")
+        user = st.text_input("Usuário")
+        pw = st.text_input("Senha", type="password")
+        if st.button("Acessar Terminal"):
+            if user == "igor" and pw == "123": # Edite suas credenciais aqui
+                st.session_state.auth = True
+                st.rerun()
+            else:
+                st.error("Acesso negado.")
+        st.stop()
 
-# 2. Persistência de Sessão (Fase 1 - Step 3)
-if "ai_calls" not in st.session_state:
-    st.session_state.ai_calls = 0
+check_auth()
 
-# UI Style
-st.markdown("<style>[data-testid='stMetricValue'] { color: #00ff88; font-family: monospace; }</style>", unsafe_allow_html=True)
-
-st.title("⚡ Terminal Igorbarbo | Institutional V5")
-st.markdown("---")
+# --- INTERFACE PRINCIPAL ---
+st.set_page_config(page_title="Terminal V5 | Pro", layout="wide")
+st.sidebar.title("Configurações")
+if st.sidebar.button("Sair / Logout"):
+    st.session_state.auth = False
+    st.rerun()
 
 df_raw = fetch_data()
 
 if df_raw is not None:
-    # 3. Cache de sincronização para evitar erro 429
     if "df_p" not in st.session_state:
-        with st.spinner("🔄 Sincronizando Mercado..."):
+        with st.spinner("Sincronizando Mercado..."):
             st.session_state.df_p = sync_prices(df_raw)
             st.session_state.last_sync = datetime.now().strftime("%H:%M:%S")
 
     df, rent_real, total = process_metrics(st.session_state.df_p)
+    total_usd = convert_to_usd(total)
 
-    # Dashboard de Métricas Ponderadas
-    c1, c2, c3 = st.columns(3)
-    c1.metric("CAPITAL ALOCADO", f"R$ {total:,.2f}")
-    c2.metric("RENTABILIDADE MWA", f"{rent_real:.2f}%")
-    c3.metric("ÚLTIMO SYNC", st.session_state.last_sync)
+    # Header de Nível Institucional
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("PATRIMÔNIO (BRL)", f"R$ {total:,.2f}")
+    c2.metric("EQUITY (USD)", f"$ {total_usd:,.2f}")
+    c3.metric("RENTABILIDADE MWA", f"{rent_real:.2f}%")
+    c4.metric("STATUS", "CONECTADO", delta=st.session_state.last_sync)
 
-    tab1, tab2, tab3 = st.tabs(["📊 PERFORMANCE", "🤖 IA ADVISOR", "🎯 MOTOR DE APORTE"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 PERFORMANCE", "🧪 BACKTESTING", "🤖 IA ADVISOR", "🎯 RADAR"])
 
     with tab1:
         fig = px.treemap(df, path=['Ativo'], values='Patrimônio',
-                         color='Valorização %', color_continuous_scale='RdYlGn',
-                         color_continuous_midpoint=0)
+                         color='Valorização %', color_continuous_scale='RdYlGn')
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
-        # 4. Controle de IA (Fase 2 - Step 5)
-        st.subheader("💬 Gemini 2.0 Flash Pro")
-        if st.session_state.ai_calls >= 15:
-            st.warning("⚠️ Limite de consultas diárias atingido (Quota Control).")
-        else:
-            pergunta = st.chat_input("Dúvida estratégica?")
-            if pergunta:
-                st.session_state.ai_calls += 1
-                logger.info(f"Pergunta: {pergunta} | Call #{st.session_state.ai_calls}")
-                with st.spinner("Analisando notícias e carteira..."):
-                    resposta = ask_ai(pergunta, df)
-                    st.write(resposta)
+        st.subheader("Simulação Histórica (vs Ibovespa)")
+        if st.button("Rodar Backtesting 12 Meses"):
+            df_b = run_backtest(df)
+            if df_b is not None:
+                st.line_chart(df_b)
+                ret_c = (df_b["Minha Carteira"].iloc[-1] - 1) * 100
+                ret_i = (df_b["Ibovespa"].iloc[-1] - 1) * 100
+                st.write(f"**Resultado:** Carteira ({ret_c:.1f}%) vs Ibov ({ret_i:.1f}%)")
 
     with tab3:
-        st.subheader("⚖️ Ranking de Prioridade de Aporte")
-        # Mostrando o Motor Decisional em ação
-        st.dataframe(
-            df[['Ativo', 'Valorização %', 'Peso', 'Prioridade']]
-            .sort_values('Prioridade', ascending=False)
-            .style.background_gradient(cmap='Greens', subset=['Prioridade']),
-            use_container_width=True
-        )
+        st.subheader("💬 Inteligência Gemini 2.0")
+        pergunta = st.chat_input("Ex: Qual o risco da minha carteira hoje?")
+        if pergunta:
+            resposta = ask_ai(pergunta, df)
+            st.write(resposta)
+
+    with tab4:
+        st.subheader("🎯 Prioridade de Aporte")
+        st.dataframe(df[['Ativo', 'Peso', 'Prioridade']].sort_values('Prioridade', ascending=False), use_container_width=True)
+
 else:
-    st.warning("Aguardando Google Sheets...")
+    st.info("Conecte sua planilha para começar.")
     
