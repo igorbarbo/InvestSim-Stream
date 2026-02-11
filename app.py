@@ -1,67 +1,89 @@
 import streamlit as st
 import plotly.express as px
 from datetime import datetime
+import sys
+import os
 
-# IMPORTANDO SEUS MÓDULOS DA PASTA SRC
-from src.data_engine import fetch_data, sync_prices
-from src.analytics import process_metrics
-from src.ai_agent import ask_ai
+# --- BLINDAGEM DE CAMINHO (Resolve o ImportError) ---
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# 1. CONFIGURAÇÃO DE TELA E STATUS
+try:
+    from src.data_engine import fetch_data, sync_prices
+    from src.analytics import process_metrics
+    from src.ai_agent import ask_ai
+except ImportError as e:
+    st.error(f"Erro de Módulo: {e}. Verifique se a pasta 'src' e o arquivo '__init__.py' existem.")
+    st.stop()
+
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Terminal Igorbarbo Pro", layout="wide", page_icon="⚡")
 
-st.markdown(f"""
-    <div style="background:#11151c; padding:10px; border-radius:10px; border-left:5px solid #00ff88; margin-bottom:20px;">
-        <small style="color:#888;">STATUS DO SISTEMA</small><br>
-        <b>MODO:</b> Enterprise (Modular) | <b>MÉTRICA:</b> Média Ponderada pelo Patrimônio
-    </div>
+# Estilo CSS para Cards Neon e Esconder Menu Lateral (Reforço)
+st.markdown("""
+    <style>
+        [data-testid="stMetricValue"] { font-size: 28px; color: #00ff88; }
+        .main { background-color: #0e1117; }
+        div[data-testid="stExpander"] { border: 1px solid #262730; }
+    </style>
 """, unsafe_allow_html=True)
 
-# 2. CARREGAMENTO INICIAL
+# --- CABEÇALHO ---
+st.title("⚡ Terminal Igorbarbo | Enterprise")
+st.markdown("---")
+
+# --- LÓGICA DE DADOS ---
 df_raw = fetch_data()
 
 if df_raw is not None:
-    # Botão de Sincronização
-    if st.button("🚀 SINCRONIZAR COM A BOLSA"):
-        with st.spinner("Buscando preços em tempo real..."):
+    # Auto-Sincronização: Se não tem dados no estado, busca agora
+    if "df_p" not in st.session_state:
+        with st.spinner("🚀 Sincronizando com a B3..."):
             st.session_state.df_p = sync_prices(df_raw)
             st.session_state.last_sync = datetime.now().strftime("%H:%M:%S")
 
-    # 3. INTERFACE PRINCIPAL (SÓ APARECE APÓS SINCRONIZAR)
-    if "df_p" in st.session_state:
-        # PROCESSA A INTELIGÊNCIA QUANTITATIVA
+    # Se a sincronização deu certo, mostra o Dashboard
+    if st.session_state.df_p is not None:
         df, rent_real, total = process_metrics(st.session_state.df_p)
 
-        tab1, tab2, tab3 = st.tabs(["📊 PERFORMANCE REAL", "🧠 IA ADVISOR", "⚖️ PRIORIDADES"])
+        # MÉTRICAS PRINCIPAIS (Cards)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("PATRIMÔNIO TOTAL", f"R$ {total:,.2f}")
+        c2.metric("RENTABILIDADE REAL (MWA)", f"{rent_real:.2f}%")
+        c3.metric("ÚLTIMA SINCRONIZAÇÃO", st.session_state.last_sync)
+
+        # ABAS DO SISTEMA
+        tab1, tab2, tab3 = st.tabs(["📊 PERFORMANCE", "🤖 IA ADVISOR", "🎯 PRIORIDADES"])
 
         with tab1:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("PATRIMÔNIO TOTAL", f"R$ {total:,.2f}")
-            c2.metric("RENTABILIDADE REAL (PONDERADA)", f"{rent_real:.2f}%")
-            c3.metric("ÚLTIMA ATUALIZAÇÃO", st.session_state.last_sync)
-
-            # Gráfico Profissional
+            st.subheader("Mapa de Calor do Patrimônio")
             fig = px.treemap(df, path=[px.Constant("Carteira"), 'Ativo'], values='Patrimônio',
                              color='Valorização %', color_continuous_scale='RdYlGn',
                              color_continuous_midpoint=0)
+            fig.update_layout(margin=dict(t=10, l=10, r=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
         with tab2:
-            st.subheader("💬 Consultor IA Expert")
-            pergunta = st.chat_input("Ex: Qual o risco atual da minha alocação?")
+            st.subheader("💬 Consultoria Estratégica")
+            pergunta = st.chat_input("Dúvida sobre a alocação?")
             if pergunta:
-                with st.spinner("IA analisando sua carteira..."):
+                with st.spinner("Analisando dados..."):
                     resposta = ask_ai(pergunta, df)
-                    st.markdown(f"> {pergunta}")
+                    st.info(f"**Pergunta:** {pergunta}")
                     st.write(resposta)
 
         with tab3:
-            st.subheader("🎯 Ranking de Aporte (Onde colocar dinheiro?)")
-            st.write("O algoritmo calcula a prioridade baseada na queda do ativo e no peso dele na carteira.")
-            # Mostra o ranking de quem caiu mais e tem menos peso
-            st.dataframe(df[['Ativo', 'Valorização %', 'Peso', 'Prioridade']].sort_values(by='Prioridade', ascending=False), use_container_width=True)
+            st.subheader("⚖️ Radar de Aporte")
+            st.write("Ativos com maior **Prioridade** são aqueles que estão baratos (queda) e com pouco peso na carteira.")
+            df_sort = df[['Ativo', 'Valorização %', 'Peso', 'Prioridade']].sort_values(by='Prioridade', ascending=False)
+            st.dataframe(df_sort.style.background_gradient(subset=['Prioridade'], cmap='Greens'), use_container_width=True)
+            
     else:
-        st.info("Clique no botão 'Sincronizar' acima para carregar os dados do mercado.")
+        st.error("Erro ao sincronizar preços do Yahoo Finance. Tente novamente em instantes.")
 else:
-    st.error("Não foi possível carregar a planilha. Verifique a URL do Google Sheets.")
+    st.error("❌ Erro: Não foi possível ler a planilha do Google Sheets.")
+
+# --- FOOTER ---
+if st.button("🔄 Forçar Atualização"):
+    st.session_state.clear()
+    st.rerun()
     
