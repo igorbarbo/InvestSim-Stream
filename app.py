@@ -4,18 +4,17 @@ import yfinance as yf
 import plotly.express as px
 import google.generativeai as genai
 
-# --- 1. CONFIGURAÇÃO DA CHAVE (Sua chave já está aqui!) ---
+# --- 1. CONFIGURAÇÃO DA CHAVE ---
 API_KEY = "AIzaSyAXfzbC-9RGpQgafSG-86AMGK-2AgtOQCU" 
 
 try:
     genai.configure(api_key=API_KEY)
-    # Ativando o modelo com busca no Google para notícias em tempo real
     model = genai.GenerativeModel('gemini-1.5-flash', tools=[{'google_search_grounding': {}}])
     IA_ATIVA = True
 except:
     IA_ATIVA = False
 
-# --- 2. CONFIGURAÇÃO DE ESTILO DARK PREMIUM ---
+# --- 2. CONFIGURAÇÃO DE ESTILO (CORRIGIDO) ---
 st.set_page_config(page_title="Terminal Igorbarbo | Expert", layout="wide", page_icon="⚡")
 
 st.markdown("""
@@ -31,9 +30,9 @@ st.markdown("""
             background-color: #11151c; border-radius: 10px 10px 0 0; padding: 10px 20px;
         }
     </style>
-""", unsafe_allow_True=True)
+""", unsafe_allow_html=True) # <-- O erro estava aqui e foi corrigido!
 
-# --- 3. CARREGAMENTO DE DADOS (Google Sheets) ---
+# --- 3. CARREGAMENTO DE DADOS ---
 @st.cache_data(ttl=300)
 def carregar_dados():
     try:
@@ -56,14 +55,12 @@ with tab_dash:
         with st.spinner("Conectando aos servidores da Bolsa..."):
             try:
                 tickers = df_base['Ativo'].unique().tolist()
-                # Busca cotações e o dólar
                 dolar = float(yf.download("USDBRL=X", period="1d", progress=False)['Close'].iloc[-1])
                 precos = yf.download(tickers, period="1d", progress=False)['Close']
                 
                 p_dict = {t: float(precos[t].iloc[-1] if len(tickers) > 1 else precos.iloc[-1]) for t in tickers}
                 
                 df_base['Preço Atual'] = df_base['Ativo'].map(p_dict)
-                # Cálculo de patrimônio considerando ativos em dólar se necessário
                 df_base['Patrimônio'] = df_base['QTD'] * df_base['Preço Atual']
                 df_base['YOC %'] = (df_base['Preço Atual'] / df_base['Preço Médio'] - 1) * 100
                 
@@ -86,7 +83,6 @@ with tab_dash:
 
 with tab_ai:
     st.subheader("💬 Consultor IA com Google Search")
-    st.caption("A IA analisará sua carteira e pesquisará notícias em tempo real.")
     
     if prompt := st.chat_input("Ex: Quais notícias de hoje impactam minha carteira?"):
         with st.chat_message("user"): st.write(prompt)
@@ -95,7 +91,6 @@ with tab_ai:
                 st.error("Erro na ativação da IA.")
             else:
                 ctx = st.session_state.get('df_p', df_base).to_string()
-                # O Gemini usa o Grounding para pesquisar notícias reais agora
                 res = model.generate_content(f"Investidor: Igor. Carteira: {ctx}\n\nPergunta: {prompt}")
                 st.write(res.text)
 
