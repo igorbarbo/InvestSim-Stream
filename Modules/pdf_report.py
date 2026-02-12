@@ -1,4 +1,5 @@
 from fpdf import FPDF
+import datetime
 
 class PrivatePDF(FPDF):
     def header(self):
@@ -12,18 +13,19 @@ class PrivatePDF(FPDF):
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, 'Confidencial - Estratégia de Acumulação Patrimonial', 0, 0, 'C')
+        data = datetime.datetime.now().strftime("%d/%m/%Y")
+        self.cell(0, 10, f'Relatório Estratégico - Gerado em {data}', 0, 0, 'C')
 
 def generate(df, total_brl, mwa):
     pdf = PrivatePDF()
     pdf.add_page()
     pdf.set_font("Times", 'B', 14)
-    pdf.cell(0, 10, f"Patrimônio Consolidado: R$ {total_brl:,.2f}", ln=True)
+    pdf.cell(0, 10, f"Patrimonio Consolidado: R$ {total_brl:,.2f}", ln=True)
     pdf.ln(5)
     
     pdf.set_fill_color(245, 245, 245)
     pdf.cell(90, 10, ' ATIVO', 0, 0, 'L', 1)
-    pdf.cell(90, 10, 'VALOR ALOCADO ', 0, 1, 'R', 1)
+    pdf.cell(90, 10, 'VALOR ATUALIZADO ', 0, 1, 'R', 1)
     
     pdf.set_font("Times", size=11)
     for _, row in df.iterrows():
@@ -33,7 +35,6 @@ def generate(df, total_brl, mwa):
     
     pdf.ln(20)
     pdf.set_font('Times', 'I', 9)
-    pdf.multi_cell(0, 5, "Nota: Este relatório considera o reinvestimento automático de dividendos e aportes mensais de R$ 3.000,00 como base da estratégia de crescimento composto.")
-        
+    pdf.multi_cell(0, 5, "Estratégia Híbrida 10% a.a. | Aporte Mensal R$ 3.000,00 | Reinvestimento Total.")
     return pdf.output(dest='S').encode('latin-1')
     
