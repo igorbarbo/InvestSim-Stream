@@ -9,16 +9,17 @@ import plotly.express as px
 st.set_page_config(page_title="Igorbarbo V6 Pro", layout="wide")
 db.init_db()
 
-# Estilização Private Banking
+# Estilização de Luxo (CSS)
 st.markdown("""
     <style>
     .stApp { background-color: #05070A; color: white; }
     [data-testid="stMetricValue"] { color: #D4AF37 !important; }
     .stTable { background-color: rgba(255,255,255,0.05); border-radius: 10px; }
+    h1, h2, h3 { color: #D4AF37 !important; font-family: 'serif'; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE LÓGICA ---
+# --- ENGINE ---
 def run_simulation(df, aporte):
     total_futuro = df['Patrimônio'].sum() + aporte
     objetivo_cada = total_futuro / len(df)
@@ -33,11 +34,10 @@ def run_simulation(df, aporte):
 menu = st.sidebar.radio("MENU PRIVATE", ["🏠 Dashboard", "🎯 Simulador de Aporte", "⚙️ Gestão de Ativos", "📄 Relatório PDF"])
 df_db = db.get_assets()
 
-# --- MOTOR DE PREÇOS GLOBAL (Evita KeyError) ---
+# --- MOTOR DE PREÇOS GLOBAL ---
 if not df_db.empty:
     try:
         tickers = [f"{t}.SA" for t in df_db['ticker']]
-        # Baixa os dados uma única vez para todas as abas
         prices_data = yf.download(tickers, period="1d", progress=False)['Close']
         
         if len(tickers) == 1:
@@ -48,50 +48,61 @@ if not df_db.empty:
         
         df_db['Patrimônio'] = df_db['qtd'] * df_db['Preço']
     except Exception as e:
-        st.sidebar.error("Erro na conexão com B3. Preços desatualizados.")
+        st.sidebar.warning("⚠️ Modo Offline: Falha na cotação B3")
 
-# --- RENDERIZAÇÃO DAS ABAS ---
+# --- INTERFACE ---
 if menu == "🏠 Dashboard":
     st.title("💎 Wealth Management Dashboard")
     if not df_db.empty:
-        c1, c2 = st.columns(2)
         total_brl = df_db['Patrimônio'].sum()
-        c1.metric("Patrimônio Total", f"R$ {total_brl:,.2f}")
+        st.metric("Patrimônio Líquido Estimado", f"R$ {total_brl:,.2f}")
         
-        fig = px.pie(df_db, values='Patrimônio', names='ticker', hole=0.5, 
-                     color_discrete_sequence=px.colors.sequential.Gold)
+        # DEFINIÇÃO DAS CORES MANUAIS (GOLD PALETTE)
+        gold_colors = ["#D4AF37", "#C5A028", "#B8860B", "#8B6508", "#FFD700", "#DAA520"]
+        
+        fig = px.pie(
+            df_db, 
+            values='Patrimônio', 
+            names='ticker', 
+            hole=0.6,
+            color_discrete_sequence=gold_colors # Cores fixas sem erro
+        )
+        
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="white"),
+            margin=dict(t=0, b=0, l=0, r=0)
+        )
+        
         st.plotly_chart(fig, width='stretch')
         gc.collect()
     else:
-        st.info("Bem-vindo! Comece adicionando ativos na aba 'Gestão'.")
+        st.info("Aguardando inserção de ativos na aba 'Gestão'.")
 
 elif menu == "🎯 Simulador de Aporte":
     st.title("🎯 Estrategista de Capital")
-    valor = st.number_input("Valor disponível para aporte (R$)", min_value=0.0, step=100.0)
+    valor = st.number_input("Capital para Aporte (R$)", min_value=0.0, step=100.0)
     if valor > 0 and not df_db.empty:
-        sugestoes = run_simulation(df_db, valor)
-        st.table(sugestoes)
-        st.info("💡 O algoritmo prioriza ativos que estão abaixo da média de equilíbrio.")
+        st.table(run_simulation(df_db, valor))
 
 elif menu == "⚙️ Gestão de Ativos":
-    st.subheader("🛠️ Cadastro de Ativos")
+    st.subheader("🛠️ Custódia de Ativos")
     with st.form("add_form", clear_on_submit=True):
-        t = st.text_input("Ticker (ex: ITUB4)").upper().strip()
+        t = st.text_input("Ticker (ex: BBAS3)").upper().strip()
         q = st.number_input("Quantidade", min_value=0.0)
         p = st.number_input("Preço Médio", min_value=0.0)
-        if st.form_submit_button("Salvar no Banco SQL"):
+        if st.form_submit_button("Confirmar Registro"):
             if t:
                 db.add_asset(t, q, p)
-                st.success(f"Ativo {t} salvo!")
+                st.success(f"Ativo {t} sincronizado com sucesso!")
                 st.rerun()
 
 elif menu == "📄 Relatório PDF":
-    st.title("📄 Relatório de Elite")
+    st.title("📄 Relatórios Institucionais")
     if not df_db.empty:
-        if st.button("Gerar Wealth Report"):
-            total = df_db['Patrimônio'].sum() if 'Patrimônio' in df_db else 0
+        if st.button("Gerar Report de Performance"):
+            total = df_db['Patrimônio'].sum()
             pdf_bytes = pdf_report.generate(df_db, total, 0)
-            st.download_button("📩 Baixar PDF Private", data=pdf_bytes, file_name="Igorbarbo_Report.pdf")
-    else:
-        st.warning("Sem dados para gerar relatório.")
-        
+            st.download_button("📩 Download PDF Private", data=pdf_bytes, file_name="Report_Private.pdf")
+            
