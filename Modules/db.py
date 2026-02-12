@@ -13,7 +13,10 @@ def init_db():
 
 def get_assets():
     conn = sqlite3.connect(DB_NAME)
-    df = pd.read_sql_query("SELECT * FROM assets", conn)
+    try:
+        df = pd.read_sql_query("SELECT * FROM assets", conn)
+    except:
+        df = pd.DataFrame(columns=['ticker', 'qtd', 'pm'])
     conn.close()
     return df
 
@@ -23,4 +26,4 @@ def add_asset(ticker, qtd, pm):
                  VALUES (?, ?, ?, ?)""", (ticker.upper(), qtd, pm, datetime.datetime.now()))
     conn.commit()
     conn.close()
-  
+    
