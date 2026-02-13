@@ -1,6 +1,5 @@
 streamlit
 pandas
 yfinance
-alpha_vantage
 plotly
-fpdf
+openpyxl
