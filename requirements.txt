@@ -1,6 +1,6 @@
 streamlit
 pandas
 yfinance
+alpha_vantage
 plotly
-fpdf
-google-generativeai
+
