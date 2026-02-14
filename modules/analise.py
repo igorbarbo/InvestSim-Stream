@@ -1,32 +1,36 @@
 import yfinance as yf
 import numpy as np
+import pandas as pd
 import streamlit as st
 
 @st.cache_data(ttl=3600)
-def pegar_preco(ticker):
-    """Obtém o preço atual de fechamento via Yahoo Finance."""
-    try:
-        t = yf.Ticker(f"{ticker}.SA")
-        return t.history(period="1d")['Close'].iloc[-1]
-    except:
-        return None
-
-def analisar_preco_ativo(ticker):
-    """Executa a análise Caro/Barato baseada em percentis históricos de 5 anos."""
+def buscar_dados(ticker):
     try:
         t = yf.Ticker(f"{ticker}.SA")
         hist = t.history(period="5y")
-        if hist.empty: return "🔵 SEM DADOS", "#808080", "Ticker não encontrado.", 0
-        
-        atual = hist['Close'].iloc[-1]
-        p20 = np.percentile(hist['Close'], 20)
-        p80 = np.percentile(hist['Close'], 80)
-
-        if atual <= p20:
-            return "🟢 OPORTUNIDADE!", "#00FF00", "Preço em zona de acumulação (Percentil 20).", 100
-        elif atual >= p80:
-            return "🔴 CARO!", "#FF4444", "Preço em zona de euforia (Percentil 80). Cuidado.", 20
-        return "🟡 NEUTRO", "#D4AF37", "Preço em zona de equilíbrio histórico.", 50
+        divs = t.dividends
+        return hist, divs
     except:
-        return "🔵 ERRO", "#808080", "Falha na conexão com o mercado.", 0
-      
+        return pd.DataFrame(), pd.Series()
+
+def analise_caro_barato(ticker):
+    hist, _ = buscar_dados(ticker)
+    if hist.empty: return "🔵 SEM DADOS", "#808080", "Erro", 0, 0, 0
+    
+    atual = hist['Close'].iloc[-1]
+    media_12m = hist['Close'].tail(252).mean()
+    p20 = np.percentile(hist['Close'], 20)
+    p80 = np.percentile(hist['Close'], 80)
+    
+    score = np.clip((p80 - atual) / (p80 - p20) * 100, 0, 100)
+    
+    if atual <= p20: return "🟢 OPORTUNIDADE!", "#00FF00", "Preço em mínima histórica (P20).", atual, media_12m, score
+    if atual >= p80: return "🔴 CARO!", "#FF4444", "Preço em máxima (P80). Risco de queda.", atual, media_12m, score
+    return "🟡 NEUTRO", "#D4AF37", "Preço equilibrado.", atual, media_12m, score
+
+def preco_teto_bazin(ticker, dy_desejado=0.06):
+    _, divs = buscar_dados(ticker)
+    if divs.empty: return 0.0, 0.0
+    soma_divs = divs.tail(12).sum()
+    return (soma_divs / dy_desejado), soma_divs
+    
