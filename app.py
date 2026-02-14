@@ -682,6 +682,7 @@ ATIVOS = {
 init_db()
 conn = get_connection()
 cursor = conn.cursor()
+
 # Cria o usuário admin se não existir (executa apenas na primeira vez)
 cursor.execute("SELECT username FROM usuarios WHERE username='admin'")
 if not cursor.fetchone():
@@ -694,9 +695,9 @@ if not cursor.fetchone():
     print("✅ Usuário admin criado com senha 1234")
 else:
     print("ℹ️ Usuário admin já existe")
-else:
-    print("ℹ️ Usuário admin já existe")
+
 conn.close()
+
 
 # ============================================
 # SISTEMA DE LOGIN
