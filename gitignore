@@ -1,7 +1,23 @@
+# Banco de dados
 *.db
+
+# Backups
 backups/
+
+# Variáveis de ambiente
 .env
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# Streamlit
 .streamlit/
+
+# IDE
 .vscode/
+.idea/
