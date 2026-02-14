@@ -33,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================
-# BANCO DE DADOS (SQLite)
+# BANCO DE DADOS (SQLite) e FUNÇÕES CRUD
 # ============================================
 DB_PATH = 'invest_v8.db'
 
@@ -285,19 +285,21 @@ def buscar_dados_historicos(ticker, periodo="5y"):
             hist = acao.history(period="max")
             if hist.empty:
                 return None
-        preco_atual = hist['Close'].iloc[-1]
+        # Usar preços ajustados para cálculos históricos
+        adj_close = hist['Adj Close']
+        preco_atual = hist['Close'].iloc[-1]  # preço de fechamento real para exibição
         if len(hist) >= 252:
-            preco_medio_12m = hist['Close'].tail(252).mean()
+            preco_medio_12m = adj_close.tail(252).mean()
         else:
-            preco_medio_12m = hist['Close'].mean()
-        preco_medio_5y = hist['Close'].mean()
-        percentil_20 = hist['Close'].quantile(0.20)
-        percentil_80 = hist['Close'].quantile(0.80)
-        minimo_5y = hist['Close'].min()
-        maximo_5y = hist['Close'].max()
+            preco_medio_12m = adj_close.mean()
+        preco_medio_5y = adj_close.mean()
+        percentil_20 = adj_close.quantile(0.20)
+        percentil_80 = adj_close.quantile(0.80)
+        minimo_5y = adj_close.min()
+        maximo_5y = adj_close.max()
         if len(hist) > 252:
-            preco_1ano_atras = hist['Close'].iloc[-252]
-            variacao_anual = (preco_atual / preco_1ano_atras - 1) * 100
+            preco_1ano_atras_adj = adj_close.iloc[-252]
+            variacao_anual = (adj_close.iloc[-1] / preco_1ano_atras_adj - 1) * 100
         else:
             variacao_anual = 0
         try:
@@ -461,7 +463,7 @@ def plotar_grafico_historico(dados_historicos, ticker):
     p20 = dados_historicos['percentil_20']
     p80 = dados_historicos['percentil_80']
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=hist.index, y=hist['Close'], mode='lines', name='Preço', line=dict(color='#D4AF37', width=2)))
+    fig.add_trace(go.Scatter(x=hist.index, y=hist['Adj Close'], mode='lines', name='Preço Ajustado', line=dict(color='#D4AF37', width=2)))
     fig.add_trace(go.Scatter(x=hist.index, y=[media_12m]*len(hist), mode='lines', name='Média 12m', line=dict(color='white', width=1, dash='dash')))
     fig.add_hrect(y0=p20, y1=p80, fillcolor="green", opacity=0.1, line_width=0, name="Faixa Normal (20-80%)")
     cor_status = "#00FF00" if preco_atual < media_12m else "#FF4444"
@@ -596,9 +598,7 @@ def calcular_rebalanceamento(df_ativos, metas, valor_disponivel=0):
             'Diferença (R$)': diferenca,
             'Ação': acao
         })
-    return pd.DataFrame(recomendacoes)
-
-# ============================================
+    return pd.DataFrame(recomendacoes)# ============================================
 # AUTENTICAÇÃO
 # ============================================
 def carregar_credenciais():
@@ -640,7 +640,7 @@ def exportar_para_excel(df_carteira, df_analise=None):
 
 def exportar_para_csv(df):
     return df.to_csv(index=False).encode('utf-8')# ============================================
-# LISTA DE ATIVOS (config)
+# LISTAS DE ATIVOS PARA ASSISTENTE E SCANNER
 # ============================================
 ATIVOS = {
     "Renda Fixa": [
@@ -698,7 +698,28 @@ ATIVOS = {
     ]
 }
 
-# ============================================
+# Listas para Scanner de Oportunidades
+SCANNER_FIIS = [
+    "MXRF11", "HGLG11", "KNRI11", "XPLG11", "CPTS11", "KNCR11", "HGBS11", "VISC11", "BRCR11",
+    "HGRE11", "VINO11", "VRTA11", "RZTR11", "BCFF11", "BTLG11", "GTWR11", "HSML11", "MALL11"
+]
+
+SCANNER_ACOES = [
+    "VALE3", "PETR4", "ITUB4", "WEGE3", "BBAS3", "PRIO3", "RAIZ4", "BBDC4", "ABEV3", "RENT3",
+    "EQTL3", "SUZB3", "ELET3", "JBSS3", "LREN3", "RADL3", "HAPV3", "GGBR4", "CMIG4", "UGPA3"
+]
+
+SCANNER_ETFS = [
+    "IVVB11", "BOVA11", "SMAL11", "PIBB11", "FIXA11"
+]
+
+SCANNER_BDRS = [
+    "AAPL34", "GOOGL34", "MSFT34", "AMZO34", "NVDC34", "MELI34"
+]
+
+SCANNER_INTERNACIONAL = [
+    "IVV", "SPY", "VOO", "QQQ", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA"
+]# ============================================
 # INICIALIZAÇÃO DO BANCO E CRIAÇÃO DO ADMIN
 # ============================================
 init_db()
@@ -757,7 +778,10 @@ menu = st.sidebar.radio("Navegação", [
     "📝 Imposto Renda",
     "💰 Preço Teto",
     "📊 Análise Avançada",
-    "⚙️ Gestão"
+    "⚙️ Gestão",
+    "❄️ Bola de Neve",
+    "🔄 Balanceamento",
+    "🔍 Scanner de Oportunidades"
 ])# ============================================
 # 1. DASHBOARD
 # ============================================
@@ -833,9 +857,7 @@ if menu == "🏠 Dashboard":
                         st.write(f"• **{row['Classe']}:** aportar R$ {row['Diferença (R$)']:,.2f} para atingir a meta")
     else:
         st.info("📭 Sua carteira está vazia. Vá em 'Gestão de Carteira' para adicionar ativos.")
-        st.info("💡 Ou use o assistente 'Montar Carteira' para começar do zero!")
-
-# ============================================
+        st.info("💡 Ou use o assistente 'Montar Carteira' para começar do zero!")# ============================================
 # 2. ASSISTENTE DE CARTEIRA INTELIGENTE
 # ============================================
 elif menu == "🎯 Montar Carteira":
@@ -914,8 +936,7 @@ elif menu == "🎯 Montar Carteira":
                 st.session_state.alocacao_escolhida = alocacao
                 st.session_state.retorno_esperado = retorno_total
                 st.session_state.etapa_carteira = 3
-                st.rerun()
-    # ETAPA 3: ATIVOS ESPECÍFICOS
+                st.rerun()    # ETAPA 3: ATIVOS ESPECÍFICOS
     elif st.session_state.etapa_carteira == 3:
         st.markdown("---")
         st.subheader("📈 Passo 3: Escolha seus ativos com análise inteligente")
@@ -1040,7 +1061,9 @@ elif menu == "🎯 Montar Carteira":
                     st.session_state.etapa_carteira = 1
                     st.rerun()
         else:
-            st.info("👆 Selecione as quantidades de cada ativo para montar sua carteira")# ============================================
+            st.info("👆 Selecione as quantidades de cada ativo para montar sua carteira")
+
+# ============================================
 # 3. EVOLUÇÃO
 # ============================================
 elif menu == "📈 Evolução":
@@ -1114,9 +1137,7 @@ elif menu == "🔔 Alertas":
                             if st.button("🗑️", key=f"del_{alerta_id}"):
                                 excluir_alerta(alerta_id)
                                 st.rerun()
-                        st.divider()
-
-# ============================================
+                        st.divider()# ============================================
 # 5. IMPOSTO RENDA
 # ============================================
 elif menu == "📝 Imposto Renda":
@@ -1296,9 +1317,7 @@ elif menu == "📊 Análise Avançada":
                     width='stretch'
                 )
             with st.expander("📋 Prévia dos dados"):
-                st.dataframe(df_export, width='stretch')
-
-# ============================================
+                st.dataframe(df_export, width='stretch')# ============================================
 # 8. GESTÃO DE CARTEIRA
 # ============================================
 elif menu == "⚙️ Gestão":
@@ -1358,8 +1377,278 @@ elif menu == "⚙️ Gestão":
             st.info("📭 Nenhum ativo cadastrado.")
 
 # ============================================
+# 9. BOLA DE NEVE
+# ============================================
+elif menu == "❄️ Bola de Neve":
+    st.title("❄️ Efeito Bola de Neve")
+    st.markdown("### Simule o crescimento do seu patrimônio com aportes mensais")
+    col1, col2 = st.columns(2)
+    with col1:
+        valor_inicial = st.number_input("💰 Valor inicial (R$)", min_value=0.0, value=0.0, step=1000.0)
+        aporte_mensal = st.number_input("📅 Aporte mensal (R$)", min_value=0.0, value=500.0, step=100.0)
+    with col2:
+        taxa_anual = st.slider("📈 Rentabilidade anual (%)", 0.0, 20.0, 10.0, step=0.5) / 100
+        anos = st.slider("⏳ Período (anos)", 1, 50, 20)
+    meses = anos * 12
+    taxa_mensal = (1 + taxa_anual) ** (1/12) - 1
+    # Simulação mês a mês
+    df_sim = pd.DataFrame({'Mês': range(1, meses+1)})
+    # Com reinvestimento
+    patrimonio = []
+    atual = valor_inicial
+    for i in range(meses):
+        atual = atual * (1 + taxa_mensal) + aporte_mensal
+        patrimonio.append(atual)
+    df_sim['Com reinvestimento'] = patrimonio
+    # Sem reinvestimento
+    patrimonio_sem = []
+    atual_sem = valor_inicial
+    for i in range(meses):
+        atual_sem = atual_sem + aporte_mensal
+        patrimonio_sem.append(atual_sem)
+    df_sim['Sem reinvestimento'] = patrimonio_sem
+    # Totais
+    final_com = df_sim['Com reinvestimento'].iloc[-1]
+    final_sem = df_sim['Sem reinvestimento'].iloc[-1]
+    total_aportado = valor_inicial + aporte_mensal * meses
+    lucro_com = final_com - total_aportado
+    lucro_sem = final_sem - total_aportado
+    diferenca = final_com - final_sem
+    # Métricas
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Total aportado", f"R$ {total_aportado:,.2f}")
+    col_m2.metric("Com reinvestimento", f"R$ {final_com:,.2f}", delta=f"Lucro: R$ {lucro_com:,.2f}")
+    col_m3.metric("Sem reinvestimento", f"R$ {final_sem:,.2f}", delta=f"Lucro: R$ {lucro_sem:,.2f}")
+    st.info(f"💡 **Diferença:** Se você gastar os rendimentos, deixará de ganhar **R$ {diferenca:,.2f}** em {anos} anos.")
+    # Gráfico
+    fig = px.line(df_sim, x='Mês', y=['Com reinvestimento', 'Sem reinvestimento'],
+                  title=f"Crescimento do patrimônio em {anos} anos",
+                  labels={'value': 'Patrimônio (R$)', 'variable': 'Cenário'},
+                  color_discrete_map={'Com reinvestimento': '#D4AF37', 'Sem reinvestimento': '#FF4B4B'})
+    st.plotly_chart(fig, use_container_width=True)
+    # Tabela anual
+    with st.expander("📊 Ver tabela anual"):
+        df_sim['Ano'] = ((df_sim['Mês'] - 1) // 12) + 1
+        df_anual = df_sim.groupby('Ano').last().reset_index()
+        df_anual = df_anual[['Ano', 'Com reinvestimento', 'Sem reinvestimento']]
+        df_anual.columns = ['Ano', 'Com reinvestimento (R$)', 'Sem reinvestimento (R$)']
+        df_anual['Com reinvestimento (R$)'] = df_anual['Com reinvestimento (R$)'].apply(lambda x: f"{x:,.2f}")
+        df_anual['Sem reinvestimento (R$)'] = df_anual['Sem reinvestimento (R$)'].apply(lambda x: f"{x:,.2f}")
+        st.table(df_anual)
+
+# ============================================
+# 10. BALANCEAMENTO INTELIGENTE MENSAL
+# ============================================
+elif menu == "🔄 Balanceamento":
+    st.title("🔄 Balanceamento Inteligente da Carteira")
+    st.markdown("### Mantenha sua carteira equilibrada mês a mês")
+    df = carregar_ativos(st.session_state.user_id)
+    if df.empty:
+        st.info("Adicione ativos para ver as recomendações de balanceamento.")
+    else:
+        with st.spinner("Atualizando preços..."):
+            precos_info = []
+            for ticker in df['ticker']:
+                preco, _, _ = pegar_preco(ticker)
+                precos_info.append(preco if preco else 0)
+            df['preco'] = precos_info
+            df['Patrimônio'] = df['qtd'] * df['preco']
+        total_patrimonio = df['Patrimônio'].sum()
+        metas = carregar_metas(st.session_state.user_id)
+        if not metas:
+            st.warning("Você ainda não definiu metas de alocação. Vá em 'Montar Carteira' e defina seu perfil primeiro.")
+        else:
+            alocacao_atual = df.groupby('setor')['Patrimônio'].sum().to_dict()
+            comparacao = []
+            for classe, meta_pct in metas.items():
+                atual_valor = alocacao_atual.get(classe, 0)
+                atual_pct = (atual_valor / total_patrimonio) * 100 if total_patrimonio > 0 else 0
+                diferenca = atual_pct - meta_pct
+                status = "🔴 Acima" if diferenca > 5 else "🟢 OK" if abs(diferenca) <= 5 else "🔵 Abaixo"
+                comparacao.append({
+                    "Classe": classe,
+                    "Meta (%)": f"{meta_pct:.1f}%",
+                    "Atual (R$)": f"R$ {atual_valor:,.2f}",
+                    "Atual (%)": f"{atual_pct:.1f}%",
+                    "Diferença": f"{diferenca:+.1f}%",
+                    "Status": status
+                })
+            df_comp = pd.DataFrame(comparacao)
+            st.subheader("📊 Alocação Atual vs. Meta")
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                st.caption("**Alocação Atual**")
+                fig_atual = px.pie(values=[alocacao_atual.get(classe,0) for classe in metas.keys()], 
+                                    names=list(metas.keys()), hole=0.4,
+                                    color_discrete_sequence=px.colors.sequential.Gold)
+                st.plotly_chart(fig_atual, use_container_width=True)
+            with col_g2:
+                st.caption("**Alocação Meta**")
+                fig_meta = px.pie(values=list(metas.values()), names=list(metas.keys()), hole=0.4,
+                                  color_discrete_sequence=px.colors.sequential.Gold_r)
+                st.plotly_chart(fig_meta, use_container_width=True)
+            st.subheader("📋 Detalhamento")
+            st.dataframe(df_comp.style.applymap(lambda x: 'color: red' if x == '🔴 Acima' else ('color: green' if x == '🟢 OK' else 'color: blue'), subset=['Status']), width='stretch')
+            st.subheader("💰 Recomendação de Aporte Mensal")
+            valor_aporte = st.number_input("Quanto você pretende aportar este mês? (R$)", min_value=0.0, value=500.0, step=100.0)
+            if valor_aporte > 0:
+                novo_total = total_patrimonio + valor_aporte
+                recomendacoes = []
+                for classe, meta_pct in metas.items():
+                    atual_valor = alocacao_atual.get(classe, 0)
+                    valor_desejado = novo_total * meta_pct / 100
+                    diferenca = valor_desejado - atual_valor
+                    if diferenca > 0:
+                        acao = "COMPRAR"
+                        sugestao = f"Aporte R$ {diferenca:,.2f} em {classe}"
+                    elif diferenca < 0:
+                        acao = "VENDER"
+                        sugestao = f"Venda R$ {abs(diferenca):,.2f} em {classe} (ou aguarde)"
+                    else:
+                        acao = "OK"
+                        sugestao = f"{classe} já está na meta"
+                    recomendacoes.append({
+                        "Classe": classe,
+                        "Atual (R$)": atual_valor,
+                        "Desejado (R$)": valor_desejado,
+                        "Diferença (R$)": diferenca,
+                        "Ação": acao,
+                        "Sugestão": sugestao
+                    })
+                df_rec = pd.DataFrame(recomendacoes)
+                st.dataframe(df_rec.style.format({"Atual (R$)": "R$ {:.2f}", "Desejado (R$)": "R$ {:.2f}", "Diferença (R$)": "R$ {:.2f}"}), width='stretch')
+                compras = df_rec[df_rec['Ação'] == "COMPRAR"]
+                if not compras.empty:
+                    total_compras = compras['Diferença (R$)'].sum()
+                    st.success(f"✅ Para balancear, você deve aportar **R$ {total_compras:,.2f}** distribuídos conforme a tabela acima.")
+                else:
+                    st.info("Sua carteira já está balanceada. Continue com seus aportes regulares.")
+            st.subheader("📉 Simulador de Estresse (Proteção contra Crises)")
+            st.caption("Veja como sua carteira reagiria a uma queda generalizada do mercado.")
+            queda = st.slider("Queda simulada nos preços dos ativos (%)", 0, 50, 20) / 100
+            df_sim = df.copy()
+            df_sim['preco_queda'] = df_sim['preco'] * (1 - queda)
+            df_sim['Patrimônio_queda'] = df_sim['qtd'] * df_sim['preco_queda']
+            total_queda = df_sim['Patrimônio_queda'].sum()
+            perda = total_patrimonio - total_queda
+            pct_perda = (perda / total_patrimonio) * 100 if total_patrimonio > 0 else 0
+            col_q1, col_q2, col_q3 = st.columns(3)
+            col_q1.metric("Patrimônio atual", f"R$ {total_patrimonio:,.2f}")
+            col_q2.metric("Após queda", f"R$ {total_queda:,.2f}", delta=f"-{pct_perda:.1f}%", delta_color="inverse")
+            col_q3.metric("Perda estimada", f"R$ {perda:,.2f}")
+            st.write("**Impacto no balanceamento:**")
+            nova_alocacao = df_sim.groupby('setor')['Patrimônio_queda'].sum().to_dict()
+            novos_desvios = []
+            for classe, meta_pct in metas.items():
+                novo_valor = nova_alocacao.get(classe, 0)
+                novo_pct = (novo_valor / total_queda) * 100 if total_queda > 0 else 0
+                desvio = novo_pct - meta_pct
+                novos_desvios.append({
+                    "Classe": classe,
+                    "Novo %": f"{novo_pct:.1f}%",
+                    "Meta %": f"{meta_pct:.1f}%",
+                    "Desvio": f"{desvio:+.1f}%"
+                })
+            df_desvios = pd.DataFrame(novos_desvios)
+            st.dataframe(df_desvios, width='stretch')
+            st.info("💡 **Dica:** Em cenários de crise, mantenha a calma e evite vender ativos desvalorizados. Use os aportes mensais para comprar nas classes que ficaram abaixo da meta, aproveitando preços baixos.")
+
+# ============================================
+# 11. SCANNER DE OPORTUNIDADES
+# ============================================
+elif menu == "🔍 Scanner de Oportunidades":
+    st.title("🔍 Scanner de Oportunidades")
+    st.markdown("### Encontre ativos baratos em diversas categorias")
+    categoria = st.selectbox("Escolha uma categoria para analisar", 
+                             ["FIIs", "Ações", "ETFs Nacionais", "BDRs", "Internacional"])
+    if categoria == "FIIs":
+        tickers = SCANNER_FIIS
+    elif categoria == "Ações":
+        tickers = SCANNER_ACOES
+    elif categoria == "ETFs Nacionais":
+        tickers = SCANNER_ETFS
+    elif categoria == "BDRs":
+        tickers = SCANNER_BDRS
+    else:
+        tickers = SCANNER_INTERNACIONAL
+    sensibilidade = st.select_slider("Sensibilidade da análise", 
+                                     options=["Conservador", "Moderado", "Agressivo"], 
+                                     value="Moderado")
+    if st.button("🔍 Analisar oportunidades", use_container_width=True):
+        with st.spinner(f"Analisando {len(tickers)} ativos..."):
+            resultados = []
+            for ticker in tickers:
+                dados_hist = buscar_dados_historicos(ticker)
+                if dados_hist:
+                    status, msg, cor, explicacao, pontuacao = analisar_preco_ativo(ticker, dados_hist)
+                    preco = dados_hist['preco_atual']
+                    dy = dados_hist['dividend_yield']
+                    if sensibilidade == "Agressivo":
+                        if pontuacao <= -30:
+                            status = "oportunidade"
+                            msg = "🔥 OPORTUNIDADE!"
+                        elif pontuacao <= -10:
+                            status = "barato"
+                            msg = "👍 Barato"
+                        elif pontuacao <= 0:
+                            status = "neutro"
+                            msg = "⚖️ Neutro"
+                        elif pontuacao <= 15:
+                            status = "atencao"
+                            msg = "⚠️ Atenção"
+                        else:
+                            status = "caro"
+                            msg = "❌ Caro"
+                    resultados.append({
+                        "Ticker": ticker,
+                        "Status": status,
+                        "Preço": preco,
+                        "DY (%)": dy if dy else 0,
+                        "Pontuação": pontuacao,
+                        "Detalhes": explicacao[:100] + "..."
+                    })
+            if resultados:
+                df_scan = pd.DataFrame(resultados)
+                df_scan = df_scan.sort_values("Pontuação", ascending=True)
+                st.subheader("Resultados ordenados (mais baratos primeiro)")
+                def colorir_status(val):
+                    if val == 'oportunidade':
+                        return 'background-color: #006400; color: white'
+                    elif val == 'barato':
+                        return 'background-color: #32CD32; color: black'
+                    elif val == 'neutro':
+                        return 'background-color: #D4AF37; color: black'
+                    elif val == 'atencao':
+                        return 'background-color: #FFA500; color: black'
+                    elif val == 'caro':
+                        return 'background-color: #8B0000; color: white'
+                    return ''
+                st.dataframe(
+                    df_scan.style.format({
+                        "Preço": "R$ {:.2f}",
+                        "DY (%)": "{:.2f}%",
+                        "Pontuação": "{:.0f}"
+                    }).applymap(colorir_status, subset=["Status"]),
+                    width='stretch',
+                    height=400
+                )
+                st.subheader("🔎 Ver análise detalhada")
+                ticker_detalhe = st.selectbox("Selecione um ativo para análise completa", df_scan['Ticker'].tolist())
+                if ticker_detalhe:
+                    dados_hist = buscar_dados_historicos(ticker_detalhe)
+                    if dados_hist:
+                        status, msg, cor, explicacao, pontuacao = analisar_preco_ativo(ticker_detalhe, dados_hist)
+                        st.markdown(f"<h3 style='color:{cor}'>{msg}</h3>", unsafe_allow_html=True)
+                        st.markdown(explicacao)
+                        fig = plotar_grafico_historico(dados_hist, ticker_detalhe)
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Nenhum dado encontrado para os ativos desta categoria.")
+
+# ============================================
 # RODAPÉ
 # ============================================
 st.sidebar.markdown("---")
 st.sidebar.caption(f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-st.sidebar.caption("💎 Igorbarbo Private Banking v9.0 - Completo")
+st.sidebar.caption("💎 Igorbarbo Private Banking v10.0 - Completo")
