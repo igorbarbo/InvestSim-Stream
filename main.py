@@ -1,10 +1,8 @@
-# main.py
-import streamlit as st
-import streamlit_authenticator as stauth
-from dotenv import load_dotenv
-import os
-from pathlib import Path
-
+@st.cache_data(ttl=3600) # Cache de 1 hora para preços
+def buscar_cotacao_ativo(ticker):
+    # lógica de busca na API aqui
+    ...
+    
 # Carregar configurações
 from config.settings import settings
 from database.repository import DatabaseManager, UsuarioRepository
