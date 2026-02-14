@@ -1,20 +1,17 @@
-import plotly.express as px
+# Modules/utils.py
 import pandas as pd
 import io
-import yfinance as yf
 
-def gerar_grafico_setor(df):
-    return px.pie(df, values='Patrimônio', names='setor', hole=0.4, title="Divisão por Setor")
-
-def calcular_risco_retorno(tickers):
-    if not tickers: return None
-    dados = yf.download([f"{t}.SA" for t in tickers], period="1y")['Adj Close']
-    ret = dados.pct_change().dropna()
-    return ret.mean()*252, ret.std()*(252**0.5), ret.corr()
-
-def exportar_excel(df):
+def exportar_para_excel(df_carteira, df_analise=None):
+    """Exporta DataFrame(s) para um arquivo Excel em memória."""
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
-    return output.getvalue()
-    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_carteira.to_excel(writer, sheet_name='Carteira', index=False)
+        if df_analise is not None:
+            df_analise.to_excel(writer, sheet_name='Análise', index=False)
+    output.seek(0)
+    return output
+
+def exportar_para_csv(df):
+    """Exporta DataFrame para CSV em memória."""
+    return df.to_csv(index=False).encode('utf-8')
