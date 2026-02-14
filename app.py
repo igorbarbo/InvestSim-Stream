@@ -682,17 +682,18 @@ ATIVOS = {
 init_db()
 conn = get_connection()
 cursor = conn.cursor()
-
 # Cria o usuário admin se não existir (executa apenas na primeira vez)
 cursor.execute("SELECT username FROM usuarios WHERE username='admin'")
 if not cursor.fetchone():
-    hashed_password = stauth.Hasher(['1234']).generate()[0]
+    hashed_password = stauth.Hasher.hash("1234")
     cursor.execute(
         "INSERT INTO usuarios (username, nome, senha_hash) VALUES (?, ?, ?)",
         ('admin', 'Igor Barbo', hashed_password)
     )
     conn.commit()
     print("✅ Usuário admin criado com senha 1234")
+else:
+    print("ℹ️ Usuário admin já existe")
 else:
     print("ℹ️ Usuário admin já existe")
 conn.close()
