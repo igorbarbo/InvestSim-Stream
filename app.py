@@ -1,4 +1,4 @@
-import streamlit as st
+  import streamlit as st
 import pandas as pd
 import yfinance as yf
 import sqlite3
@@ -130,6 +130,12 @@ if "logado" not in st.session_state:
     st.session_state.etapa_carteira = 1
     st.session_state.alertas = {}
     st.session_state.metas_alocacao = carregar_metas_alocacao()
+    st.session_state.valor_investir = 1000.0
+    st.session_state.perfil_usuario = "Moderado"
+    st.session_state.prazo_usuario = "Médio (3-5 anos)"
+    st.session_state.objetivo_usuario = "Crescimento patrimonial"
+    st.session_state.alocacao_escolhida = None
+    st.session_state.retorno_esperado = 0.095
 
 if not st.session_state.logado:
     st.title("🏛️ Acesso Restrito")
@@ -295,7 +301,6 @@ def analisar_preco_ativo(ticker, dados_historicos):
         status = "oportunidade"
         mensagem = "🔥 OPORTUNIDADE! Muito barato"
         cor = "#00FF00"
-        emoji = "🟢"
         explicacao = "### ✅ OPORTUNIDADE DE COMPRA!\n\n"
         explicacao += "**Este ativo está muito barato comparado à sua história:**\n\n"
         for m in motivos[:4]:
@@ -312,7 +317,6 @@ def analisar_preco_ativo(ticker, dados_historicos):
         status = "barato"
         mensagem = "👍 Barato - Bom momento"
         cor = "#90EE90"
-        emoji = "🟢"
         explicacao = "### ✅ PREÇO ATRATIVO\n\n"
         explicacao += "**Este ativo está abaixo da média histórica:**\n\n"
         for m in motivos[:3]:
@@ -327,7 +331,6 @@ def analisar_preco_ativo(ticker, dados_historicos):
         status = "neutro"
         mensagem = "⚖️ Preço justo"
         cor = "#D4AF37"
-        emoji = "🟡"
         explicacao = "### ⚖️ PREÇO JUSTO\n\n"
         explicacao += "**Este ativo está dentro da faixa histórica normal:**\n\n"
         for m in motivos[:2]:
@@ -340,7 +343,6 @@ def analisar_preco_ativo(ticker, dados_historicos):
         status = "atencao"
         mensagem = "⚠️ Atenção - Acima da média"
         cor = "#FFA500"
-        emoji = "🟠"
         explicacao = "### ⚠️ PREÇO ELEVADO\n\n"
         explicacao += "**Este ativo está acima da média histórica:**\n\n"
         for m in motivos[:3]:
@@ -354,7 +356,6 @@ def analisar_preco_ativo(ticker, dados_historicos):
         status = "caro"
         mensagem = "❌ CARO! Evite comprar"
         cor = "#FF4444"
-        emoji = "🔴"
         explicacao = "### ❌ PREÇO CARO DEMAIS!\n\n"
         explicacao += "**Este ativo está muito caro comparado à sua história:**\n\n"
         for m in motivos[:4]:
@@ -430,7 +431,7 @@ def plotar_grafico_historico(dados_historicos, ticker):
     return fig
 
 # ============================================
-# NOVAS FUNÇÕES: CORRELAÇÃO, PREÇO TETO, EXPORTAÇÃO, REBALANCEAMENTO
+# FUNÇÕES DE ANÁLISE AVANÇADA
 # ============================================
 
 def calcular_matriz_correlacao(tickers, periodo="1y"):
@@ -459,7 +460,7 @@ def calcular_matriz_correlacao(tickers, periodo="1y"):
 def analisar_concentracao_setorial(df_ativos):
     """Analisa concentração por setor e emite alertas"""
     if df_ativos.empty:
-        return None
+        return None, None
     
     total = df_ativos['Patrimônio'].sum()
     setores = df_ativos.groupby('setor')['Patrimônio'].sum() / total * 100
@@ -498,65 +499,81 @@ def calcular_preco_teto_bazin(ticker, dy_desejado=0.06):
     Calcula preço teto pelo método Bazin
     Preço teto = (Dividendo anual médio) / (DY desejado)
     """
-    # ============================================
-# 2. ASSISTENTE DE CARTEIRA INTELIGENTE (CORRIGIDO)
+    try:
+        acao = yf.Ticker(f"{ticker}.SA")
+        dividends = acao.dividends.tail(12)
+        
+        if dividends.empty:
+            return None, "Sem histórico de dividendos"
+        
+        dividendo_anual_medio = dividends.mean() * 4
+        preco_teto = dividendo_anual_medio / dy_desejado
+        
+        return preco_teto, f"R$ {preco_teto:.2f}"
+    except Exception as e:
+        return None, str(e)
+
+def exportar_para_excel(df_carteira, df_analise=None):
+    """Exporta dados para Excel"""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_carteira.to_excel(writer, sheet_name='Carteira', index=False)
+        if df_analise is not None:
+            df_analise.to_excel(writer, sheet_name='Análise', index=False)
+    output.seek(0)
+    return output
+
+def exportar_para_csv(df):
+    """Exporta dados para CSV"""
+    return df.to_csv(index=False).encode('utf-8')
+
+def calcular_rebalanceamento(df_ativos, metas, valor_disponivel=0):
+    """
+    Calcula quanto aportar em cada classe para atingir metas
+    """
+    if df_ativos.empty or not metas:
+        return None
+    
+    total = df_ativos['Patrimônio'].sum() + valor_disponivel
+    atual_por_classe = df_ativos.groupby('setor')['Patrimônio'].sum()
+    
+    recomendacoes = []
+    for classe, meta_pct in metas.items():
+        if classe not in atual_por_classe.index:
+            atual = 0
+            atual_pct = 0
+        else:
+            atual = atual_por_classe[classe]
+            atual_pct = (atual / total) * 100 if total > 0 else 0
+        
+        alvo = total * meta_pct / 100
+        diferenca = alvo - atual
+        
+        if diferenca > 0:
+            acao = "COMPRAR"
+            cor = "#00FF00"
+        elif diferenca < 0:
+            acao = "VENDER"
+            cor = "#FF4444"
+        else:
+            acao = "OK"
+            cor = "#D4AF37"
+        
+        recomendacoes.append({
+            'Classe': classe,
+            'Atual (R$)': atual,
+            'Atual (%)': atual_pct,
+            'Meta (%)': meta_pct,
+            'Alvo (R$)': alvo,
+            'Diferença (R$)': diferenca,
+            'Ação': acao,
+            'Cor': cor
+        })
+    
+    return pd.DataFrame(recomendacoes)
+
 # ============================================
-elif menu == "🎯 Montar Carteira":
-    st.title("🎯 Assistente Inteligente de Carteira")
-    st.markdown("### Meta: Rentabilidade de **8% a 12% ao ano**")
-    
-    # INICIALIZAR TODAS AS VARIÁVEIS DE SESSÃO NECESSÁRIAS
-    if 'etapa_carteira' not in st.session_state:
-        st.session_state.etapa_carteira = 1
-    if 'valor_investir' not in st.session_state:
-        st.session_state.valor_investir = 1000.0
-    if 'perfil_usuario' not in st.session_state:
-        st.session_state.perfil_usuario = "Moderado"
-    if 'prazo_usuario' not in st.session_state:
-        st.session_state.prazo_usuario = "Médio (3-5 anos)"
-    if 'objetivo_usuario' not in st.session_state:
-        st.session_state.objetivo_usuario = "Crescimento patrimonial"
-    if 'alocacao_escolhida' not in st.session_state:
-        st.session_state.alocacao_escolhida = None
-    if 'retorno_esperado' not in st.session_state:
-        st.session_state.retorno_esperado = 0.095
-    
-    # --- ETAPA 1: PERFIL ---
-    if st.session_state.etapa_carteira == 1:
-        st.markdown("---")
-        st.subheader("📋 Passo 1: Conte sobre você")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            valor = st.number_input("💰 Quanto quer investir? (R$)", 
-                                   min_value=100.0, 
-                                   value=st.session_state.valor_investir, 
-                                   step=500.0,
-                                   help="Valor total disponível para investir agora")
-            
-            perfil = st.selectbox("🎲 Seu perfil de investidor",
-                                 ["Conservador", "Moderado", "Arrojado"],
-                                 index=["Conservador", "Moderado", "Arrojado"].index(st.session_state.perfil_usuario) if st.session_state.perfil_usuario in ["Conservador", "Moderado", "Arrojado"] else 1,
-                                 help="Conservador: prioriza segurança | Moderado: equilíbrio | Arrojado: busca retorno")
-        
-        with col2:
-            prazo = st.selectbox("⏱️ Prazo do investimento",
-                                ["Curto (1-2 anos)", 
-                                 "Médio (3-5 anos)", 
-                                 "Longo (5+ anos)"],
-                                index=["Curto (1-2 anos)", "Médio (3-5 anos)", "Longo (5+ anos)"].index(st.session_state.prazo_usuario) if st.session_state.prazo_usuario in ["Curto (1-2 anos)", "Médio (3-5 anos)", "Longo (5+ anos)"] else 1)
-            
-            objetivo = st.selectbox("🎯 Objetivo principal",
-                                   ["Crescimento patrimonial",
-                                    "Geração de renda mensal",
-                                    "Proteção contra inflação"],
-                                   index=["Crescimento patrimonial", "Geração de renda mensal", "Proteção contra inflação"].index(st.session_state.objetivo_usuario) if st.session_state.objetivo_usuario in ["Crescimento patrimonial", "Geração de renda mensal", "Proteção contra inflação"] else 0)
-        
-        if st.button("✅ Próximo: Ver alocação ideal", use_container_width=True):
-            st.session_state.valor_investir = valor
-            st.session_state.perfil_usuario = perfil
-            st.session_state.prazo_usuario = prazo
-            st.session_state.objetivo_usuario = objetivo
-            st.session_state.etapa_carteira = 2
-            st.rerun()
+# MENU LATERAL
+# ============================================
+st.sidebar.title("💎 IGORBARBO PRIVATE")
+menu = st.sidebar                               
