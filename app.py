@@ -241,56 +241,22 @@ def pegar_preco_simples(ticker):
 # FUNÇÕES DE ANÁLISE INTELIGENTE
 # ============================================
 @st.cache_data(ttl=3600)
+def buscar_dados_historicos(ticker, periodo="5y"):@st.cache_data(ttl=3600)
 def buscar_dados_historicos(ticker, periodo="5y"):
-    """Busca dados históricos do ativo para análise"""
-    try:
-        acao = yf.Ticker(f"{ticker}.SA")
-        hist = acao.history(period=periodo)
-        
-        if hist.empty:
-            return None
-        
-        preco_atual = hist['Close'].iloc[-1]
-        preco_medio_12m = hist['Close'].tail(252).mean()
-        preco_medio_5y = hist['Close'].mean()
-        
-        percentil_20 = hist['Close'].quantile(0.20)
-        percentil_80 = hist['Close'].quantile(0.80)
-        
-        minimo_5y = hist['Close'].min()
-        maximo_5y = hist['Close'].max()
-        
-        if len(hist) > 252:
-            preco_1ano_atras = hist['Close'].iloc[-252] if len(hist) >= 252 else hist['Close'].iloc[0]
-            variacao_anual = (preco_atual / preco_1ano_atras - 1) * 100
-        else:
-            variacao_anual = 0
-        
-        try:
-            dividendos = acao.dividends.tail(12).mean() * 4
-            if dividendos > 0 and preco_atual > 0:
-                dy = (dividendos / preco_atual) * 100
-            else:
-                dy = None
-        except:
-            dy = None
-        
-        return {
-            'ticker': ticker,
-            'preco_atual': preco_atual,
-            'preco_medio_12m': preco_medio_12m,
-            'preco_medio_5y': preco_medio_5y,
-            'percentil_20': percentil_20,
-            'percentil_80': percentil_80,
-            'minimo_5y': minimo_5y,
-            'maximo_5y': maximo_5y,
-            'variacao_anual': variacao_anual,
-            'dividend_yield': dy,
-            'dados': hist
-        }
-    except Exception as e:
-        return None
-
+    """Busca dados históricos do ativo para análise, com fallback para períodos menores"""
+def analisar_preco_ativo(ticker, dados_historicos):
+    """Analisa se o preço atual está caro ou barato baseado em dados históricos"""
+    if not dados_historicos:
+        return "neutro", "🔵 DADOS INSUFICIENTES", "#808080", "Não há dados históricos suficientes para análise. Isso é comum em ativos de renda fixa (Tesouro, CDB) ou em ativos recém-listados.", 0
+    
+    preco = dados_historicos['preco_atual']
+    media_12m = dados_historicos['preco_medio_12m']
+    p20 = dados_historicos['percentil_20']
+    p80 = dados_historicos['percentil_80']
+    minimo = dados_historicos['minimo_5y']
+    maximo = dados_historicos['maximo_5y']
+    
+    posicao_relativa
 def analisar_preco_ativo(ticker, dados_historicos):
     """Analisa se o preço atual está caro ou barato baseado em dados históricos"""
     if not dados_historicos:
