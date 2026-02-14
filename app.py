@@ -1,4 +1,4 @@
-  import streamlit as st
+import streamlit as st
 import pandas as pd
 import yfinance as yf
 import sqlite3
@@ -576,4 +576,4 @@ def calcular_rebalanceamento(df_ativos, metas, valor_disponivel=0):
 # MENU LATERAL
 # ============================================
 st.sidebar.title("💎 IGORBARBO PRIVATE")
-menu = st.sidebar                               
+menu = st.sidebar
