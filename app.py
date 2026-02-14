@@ -22,7 +22,51 @@ from Modules.analise import (
 )
 from Modules.auth import criar_authenticator
 from Modules.config import ATIVOS
-from Modules.utils import exportar_para_excel, exportar_para_csv
+from Modules.utils import exportar_para_excel, exportar_para_csvimport streamlit as st
+import sqlite3
+import streamlit_authenticator as stauth
+from Modules.auth import criar_authenticator
+
+# --- FUNÇÃO DE AUTO-CADASTRO (SÓ PARA O PRIMEIRO ACESSO) ---
+def verificar_e_criar_admin():
+    conn = sqlite3.connect('data/invest_v10.db')
+    c = conn.cursor()
+    c.execute("SELECT count(*) FROM usuarios")
+    if c.fetchone()[0] == 0:
+        st.warning("⚠️ Nenhum usuário encontrado. Crie sua conta de administrador abaixo:")
+        with st.form("cadastro_admin"):
+            novo_user = st.text_input("Usuário desejado")
+            novo_nome = st.text_input("Seu nome completo")
+            nova_senha = st.text_input("Senha", type="password")
+            if st.form_submit_button("Criar Conta Master"):
+                hash_senha = stauth.Hasher([nova_senha]).generate()[0]
+                c.execute("INSERT INTO usuarios (username, nome, senha_hash) VALUES (?, ?, ?)",
+                          (novo_user, novo_nome, hash_senha))
+                conn.commit()
+                st.success("✅ Admin criado! Atualize a página e faça login.")
+    conn.close()
+
+# --- EXECUÇÃO DO APP ---
+authenticator = criar_authenticator()
+
+# Tenta fazer o login
+try:
+    name, authentication_status, username = authenticator.login('Login', 'main')
+except Exception:
+    # Se der erro porque o banco está vazio ou a tabela não existe
+    verificar_e_criar_admin()
+    st.stop()
+
+if authentication_status:
+    authenticator.logout('Sair', 'sidebar')
+    st.write(f'# Bem-vindo, *{name}*')
+    # ... aqui entra o restante do seu código do Dashboard ...
+elif authentication_status == False:
+    st.error('Usuário ou senha incorretos')
+elif authentication_status == None:
+    st.warning('Por favor, insira seu usuário e senha')
+    verificar_e_criar_admin() # Mostra o cadastro se não houver ninguém no banco
+    
 
 # ============================================
 # INICIALIZAÇÃO DO BANCO DE DADOS
