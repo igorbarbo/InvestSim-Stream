@@ -91,7 +91,7 @@ def init_db():
     conn.close()
 
 def criar_usuario(username, nome, senha_plana):
-    hashed = stauth.Hasher([senha_plana]).generate()[0]
+    hashed = stauth.Hasher.hash(senha_plana)  # <--- LINHA CORRIGIDA
     conn = get_connection()
     c = conn.cursor()
     try:
