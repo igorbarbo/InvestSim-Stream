@@ -3,7 +3,8 @@ import pandas as pd
 import yfinance as yf
 import sqlite3
 import plotly.express as px
-from datetime import datetime
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
 import time
 
 # --- CONFIGURAÇÃO INICIAL ---
@@ -19,6 +20,10 @@ st.markdown("""
     .stDataFrame { background-color: #0F1116; border-radius: 10px; }
     .stButton button { background-color: #D4AF37; color: black; font-weight: bold; }
     .stButton button:hover { background-color: #B8860B; }
+    .status-oportunidade { color: #00FF00; font-weight: bold; }
+    .status-barato { color: #90EE90; font-weight: bold; }
+    .status-atencao { color: #FFA500; font-weight: bold; }
+    .status-caro { color: #FF4444; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -94,6 +99,7 @@ def atualizar_ativo(t, q, p, s):
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.confirmacao_exclusao = {}
+    st.session_state.etapa_carteira = 1
 
 if not st.session_state.logado:
     st.title("🏛️ Acesso Restrito")
@@ -106,7 +112,7 @@ if not st.session_state.logado:
             st.error("Senha Incorreta")
     st.stop()
 
-# --- LOGICA DE PREÇOS ---
+# --- LOGICA DE PREÇOS BÁSICA ---
 @st.cache_data(ttl=300)
 def pegar_preco(ticker):
     """Busca preço atual do ativo"""
@@ -129,11 +135,313 @@ def pegar_preco(ticker):
     except Exception as e:
         return None, "erro", str(e)
 
-# --- MENU LATERAL ---
-st.sidebar.title("💎 IGORBARBO PRIVATE")
-menu = st.sidebar.radio("Navegação", ["🏠 Dashboard", "💡 Sugestão de Aporte", "🎯 Projeção & Disciplina", "⚙️ Gestão de Carteira"])
+# ============================================
+# FUNÇÕES DE ANÁLISE INTELIGENTE (NOVO)
+# ============================================
 
-# --- 1. DASHBOARD ---
+@st.cache_data(ttl=3600)  # Cache de 1 hora para dados históricos
+def buscar_dados_historicos(ticker, periodo="5y"):
+    """Busca dados históricos do ativo para análise"""
+    try:
+        acao = yf.Ticker(f"{ticker}.SA")
+        hist = acao.history(period=periodo)
+        
+        if hist.empty:
+            return None
+        
+        # Calcular médias e indicadores
+        preco_atual = hist['Close'].iloc[-1]
+        preco_medio_12m = hist['Close'].tail(252).mean()  # Aprox 12 meses
+        preco_medio_5y = hist['Close'].mean()
+        
+        # Calcular percentis
+        percentil_20 = hist['Close'].quantile(0.20)
+        percentil_80 = hist['Close'].quantile(0.80)
+        
+        # Calcular mínima e máxima
+        minimo_5y = hist['Close'].min()
+        maximo_5y = hist['Close'].max()
+        
+        # Calcular variação anual
+        if len(hist) > 252:
+            preco_1ano_atras = hist['Close'].iloc[-252] if len(hist) >= 252 else hist['Close'].iloc[0]
+            variacao_anual = (preco_atual / preco_1ano_atras - 1) * 100
+        else:
+            variacao_anual = 0
+        
+        # Buscar dividendos (se disponível)
+        try:
+            dividendos = acao.dividends.tail(12).mean() * 4  # Média anual
+            if dividendos > 0 and preco_atual > 0:
+                dy = (dividendos / preco_atual) * 100
+            else:
+                dy = None
+        except:
+            dy = None
+        
+        return {
+            'ticker': ticker,
+            'preco_atual': preco_atual,
+            'preco_medio_12m': preco_medio_12m,
+            'preco_medio_5y': preco_medio_5y,
+            'percentil_20': percentil_20,
+            'percentil_80': percentil_80,
+            'minimo_5y': minimo_5y,
+            'maximo_5y': maximo_5y,
+            'variacao_anual': variacao_anual,
+            'dividend_yield': dy,
+            'dados': hist
+        }
+    except Exception as e:
+        return None
+
+def analisar_preco_ativo(ticker, dados_historicos):
+    """
+    Analisa se o preço atual está caro ou barato baseado em dados históricos
+    Retorna: (status, mensagem, cor, explicacao, pontuacao)
+    """
+    if not dados_historicos:
+        return "neutro", "🔵 DADOS INSUFICIENTES", "#808080", "Não foi possível buscar dados históricos para análise", 0
+    
+    preco = dados_historicos['preco_atual']
+    media_12m = dados_historicos['preco_medio_12m']
+    p20 = dados_historicos['percentil_20']
+    p80 = dados_historicos['percentil_80']
+    minimo = dados_historicos['minimo_5y']
+    maximo = dados_historicos['maximo_5y']
+    
+    # Calcular posição relativa (0 a 100%)
+    posicao_relativa = ((preco - minimo) / (maximo - minimo)) * 100 if maximo > minimo else 50
+    
+    # Sistema de pontuação (0 = muito barato, 100 = muito caro)
+    pontuacao = 0
+    motivos = []
+    recomendacoes = []
+    
+    # 1. Comparação com média 12 meses
+    if preco < media_12m * 0.85:  # 15% abaixo da média
+        pontuacao -= 25
+        motivos.append("📉 Preço 15% abaixo da média de 12 meses")
+        recomendacoes.append("✅ Ótimo momento para comprar")
+    elif preco < media_12m * 0.9:  # 10% abaixo
+        pontuacao -= 20
+        motivos.append("📉 Preço 10% abaixo da média de 12 meses")
+        recomendacoes.append("✅ Bom momento para comprar")
+    elif preco < media_12m:
+        pontuacao -= 10
+        motivos.append("📉 Preço abaixo da média de 12 meses")
+        recomendacoes.append("👍 Momento favorável")
+    elif preco > media_12m * 1.15:  # 15% acima
+        pontuacao += 25
+        motivos.append("📈 Preço 15% acima da média de 12 meses")
+        recomendacoes.append("⏳ Aguarde uma correção")
+    elif preco > media_12m * 1.1:  # 10% acima
+        pontuacao += 20
+        motivos.append("📈 Preço 10% acima da média de 12 meses")
+        recomendacoes.append("⚠️ Espere melhorar")
+    elif preco > media_12m:
+        pontuacao += 10
+        motivos.append("📈 Preço acima da média de 12 meses")
+        recomendacoes.append("⚖️ Observe com cautela")
+    
+    # 2. Comparação com percentis
+    if preco < p20:
+        pontuacao -= 30
+        motivos.append("💰 Entre os 20% preços mais baixos dos últimos 5 anos")
+        recomendacoes.append("🔥 OPORTUNIDADE ÚNICA!")
+    elif preco > p80:
+        pontuacao += 30
+        motivos.append("⚠️ Entre os 20% preços mais altos dos últimos 5 anos")
+        recomendacoes.append("❌ Evite comprar agora")
+    
+    # 3. Posição relativa na faixa histórica
+    if posicao_relativa < 15:
+        pontuacao -= 25
+        motivos.append(f"🎯 Próximo da mínima histórica (R$ {minimo:.2f})")
+    elif posicao_relativa < 30:
+        pontuacao -= 15
+        motivos.append(f"📊 Na faixa inferior da série histórica")
+    elif posicao_relativa > 85:
+        pontuacao += 25
+        motivos.append(f"🔴 Próximo da máxima histórica (R$ {maximo:.2f})")
+    elif posicao_relativa > 70:
+        pontuacao += 15
+        motivos.append(f"📊 Na faixa superior da série histórica")
+    
+    # 4. Variação anual
+    if dados_historicos['variacao_anual'] < -20:
+        pontuacao -= 20
+        motivos.append(f"📉 Caiu {dados_historicos['variacao_anual']:.1f}% no último ano")
+    elif dados_historicos['variacao_anual'] < -10:
+        pontuacao -= 10
+        motivos.append(f"📉 Caiu {dados_historicos['variacao_anual']:.1f}% no último ano")
+    elif dados_historicos['variacao_anual'] > 50:
+        pontuacao += 25
+        motivos.append(f"🚀 Subiu {dados_historicos['variacao_anual']:.1f}% no último ano")
+    elif dados_historicos['variacao_anual'] > 30:
+        pontuacao += 15
+        motivos.append(f"🚀 Subiu {dados_historicos['variacao_anual']:.1f}% no último ano")
+    
+    # Determinar status baseado na pontuação
+    if pontuacao <= -40:
+        status = "oportunidade"
+        mensagem = "🔥 OPORTUNIDADE! Muito barato"
+        cor = "#00FF00"
+        emoji = "🟢"
+        explicacao = "### ✅ OPORTUNIDADE DE COMPRA!\n\n"
+        explicacao += "**Este ativo está muito barato comparado à sua história:**\n\n"
+        for m in motivos[:4]:
+            explicacao += f"• {m}\n"
+        explicacao += f"\n📊 **Preço atual:** R$ {preco:.2f}\n"
+        explicacao += f"📊 **Média 12m:** R$ {media_12m:.2f}\n"
+        explicacao += f"📊 **Mínima 5 anos:** R$ {minimo:.2f}\n"
+        explicacao += f"📊 **Máxima 5 anos:** R$ {maximo:.2f}\n"
+        if dados_historicos['dividend_yield']:
+            explicacao += f"💰 **Dividend Yield:** {dados_historicos['dividend_yield']:.2f}%\n"
+        explicacao += f"\n💡 **RECOMENDAÇÃO:** COMPRAR - Ótimo ponto de entrada!"
+    
+    elif pontuacao <= -20:
+        status = "barato"
+        mensagem = "👍 Barato - Bom momento"
+        cor = "#90EE90"
+        emoji = "🟢"
+        explicacao = "### ✅ PREÇO ATRATIVO\n\n"
+        explicacao += "**Este ativo está abaixo da média histórica:**\n\n"
+        for m in motivos[:3]:
+            explicacao += f"• {m}\n"
+        explicacao += f"\n📊 **Preço atual:** R$ {preco:.2f}\n"
+        explicacao += f"📊 **Média 12m:** R$ {media_12m:.2f}\n"
+        if dados_historicos['dividend_yield']:
+            explicacao += f"💰 **Dividend Yield:** {dados_historicos['dividend_yield']:.2f}%\n"
+        explicacao += f"\n💡 **RECOMENDAÇÃO:** Pode comprar - preço justo"
+    
+    elif pontuacao <= 0:
+        status = "neutro"
+        mensagem = "⚖️ Preço justo"
+        cor = "#D4AF37"
+        emoji = "🟡"
+        explicacao = "### ⚖️ PREÇO JUSTO\n\n"
+        explicacao += "**Este ativo está dentro da faixa histórica normal:**\n\n"
+        for m in motivos[:2]:
+            explicacao += f"• {m}\n"
+        explicacao += f"\n📊 **Preço atual:** R$ {preco:.2f}\n"
+        explicacao += f"📊 **Média 12m:** R$ {media_12m:.2f}\n"
+        explicacao += f"\n💡 **RECOMENDAÇÃO:** Compra neutra - nem barato nem caro"
+    
+    elif pontuacao <= 20:
+        status = "atencao"
+        mensagem = "⚠️ Atenção - Acima da média"
+        cor = "#FFA500"
+        emoji = "🟠"
+        explicacao = "### ⚠️ PREÇO ELEVADO\n\n"
+        explicacao += "**Este ativo está acima da média histórica:**\n\n"
+        for m in motivos[:3]:
+            explicacao += f"• {m}\n"
+        explicacao += f"\n📊 **Preço atual:** R$ {preco:.2f}\n"
+        explicacao += f"📊 **Média 12m:** R$ {media_12m:.2f}\n"
+        explicacao += f"📊 **Máxima 5 anos:** R$ {maximo:.2f}\n"
+        explicacao += f"\n💡 **RECOMENDAÇÃO:** Comprar só se necessário - preço salgado"
+    
+    else:
+        status = "caro"
+        mensagem = "❌ CARO! Evite comprar"
+        cor = "#FF4444"
+        emoji = "🔴"
+        explicacao = "### ❌ PREÇO CARO DEMAIS!\n\n"
+        explicacao += "**Este ativo está muito caro comparado à sua história:**\n\n"
+        for m in motivos[:4]:
+            explicacao += f"• {m}\n"
+        explicacao += f"\n📊 **Preço atual:** R$ {preco:.2f}\n"
+        explicacao += f"📊 **Média 12m:** R$ {media_12m:.2f}\n"
+        explicacao += f"📊 **Máxima 5 anos:** R$ {maximo:.2f}\n"
+        if dados_historicos['dividend_yield']:
+            explicacao += f"💰 **Dividend Yield:** {dados_historicos['dividend_yield']:.2f}%\n"
+        preco_ideal = media_12m * 0.9
+        explicacao += f"\n💡 **RECOMENDAÇÃO:** NÃO COMPRAR AGORA!\n"
+        explicacao += f"   Espere o preço cair para pelo menos R$ {preco_ideal:.2f}"
+    
+    return status, mensagem, cor, explicacao, pontuacao
+
+def plotar_grafico_historico(dados_historicos, ticker):
+    """Gera gráfico com análise de preço"""
+    if not dados_historicos:
+        return None
+    
+    hist = dados_historicos['dados']
+    preco_atual = dados_historicos['preco_atual']
+    media_12m = dados_historicos['preco_medio_12m']
+    p20 = dados_historicos['percentil_20']
+    p80 = dados_historicos['percentil_80']
+    
+    fig = go.Figure()
+    
+    # Preço histórico
+    fig.add_trace(go.Scatter(
+        x=hist.index,
+        y=hist['Close'],
+        mode='lines',
+        name='Preço',
+        line=dict(color='#D4AF37', width=2)
+    ))
+    
+    # Média 12 meses
+    fig.add_trace(go.Scatter(
+        x=hist.index,
+        y=[media_12m] * len(hist),
+        mode='lines',
+        name='Média 12m',
+        line=dict(color='white', width=1, dash='dash')
+    ))
+    
+    # Faixa de 20% a 80%
+    fig.add_hrect(
+        y0=p20, y1=p80,
+        fillcolor="green",
+        opacity=0.1,
+        line_width=0,
+        name="Faixa Normal"
+    )
+    
+    # Preço atual (linha vermelha se caro, verde se barato)
+    cor_status = "#00FF00" if preco_atual < media_12m else "#FF4444"
+    fig.add_hline(
+        y=preco_atual,
+        line_dash="dot",
+        line_color=cor_status,
+        annotation_text=f"Atual: R$ {preco_atual:.2f}",
+        annotation_position="top right"
+    )
+    
+    fig.update_layout(
+        title=f"{ticker} - Histórico de Preços (5 anos)",
+        yaxis_title="Preço (R$)",
+        xaxis_title="Data",
+        height=400,
+        showlegend=True,
+        plot_bgcolor='#0F1116',
+        paper_bgcolor='#0F1116',
+        font=dict(color='white')
+    )
+    
+    return fig
+
+# ============================================
+# MENU LATERAL
+# ============================================
+st.sidebar.title("💎 IGORBARBO PRIVATE")
+menu = st.sidebar.radio("Navegação", [
+    "🏠 Dashboard", 
+    "🎯 Montar Carteira",
+    "📈 Evolução",
+    "🔔 Alertas",
+    "📝 Imposto Renda",
+    "🎯 Projeção", 
+    "⚙️ Gestão"
+])
+
+# ============================================
+# 1. DASHBOARD
+# ============================================
 if menu == "🏠 Dashboard":
     st.title("🏛️ Patrimônio em Tempo Real")
     
@@ -214,197 +522,27 @@ if menu == "🏠 Dashboard":
     
     else:
         st.info("📭 Sua carteira está vazia. Vá em 'Gestão de Carteira' para adicionar ativos.")
+        st.info("💡 Ou use o assistente 'Montar Carteira' para começar do zero!")
 
-# --- 2. SUGESTÃO DE APORTE ---
-elif menu == "💡 Sugestão de Aporte":
-    st.title("🎯 Onde investir meus R$ 150?")
+# ============================================
+# 2. ASSISTENTE DE CARTEIRA INTELIGENTE (NOVO)
+# ============================================
+elif menu == "🎯 Montar Carteira":
+    st.title("🎯 Assistente Inteligente de Carteira")
+    st.markdown("### Meta: Rentabilidade de **8% a 12% ao ano**")
     
-    valor = st.number_input("💰 Valor disponível hoje (R$)", min_value=0.0, value=150.0, step=10.0)
+    # Inicializar estado
+    if 'etapa_carteira' not in st.session_state:
+        st.session_state.etapa_carteira = 1
     
-    sugestoes = [
-        {"Ativo": "MXRF11", "Tipo": "FII Papel", "Preço": 10.50, "Yield": "1.02%", "Recomendação": "COMPRA"},
-        {"Ativo": "GALG11", "Tipo": "FII Logística", "Preço": 9.20, "Yield": "0.91%", "Recomendação": "COMPRA"},
-        {"Ativo": "CPTS11", "Tipo": "FII Papel", "Preço": 8.60, "Yield": "0.88%", "Recomendação": "NEUTRA"},
-        {"Ativo": "KNRI11", "Tipo": "FII Tijolo", "Preço": 120.50, "Yield": "0.65%", "Recomendação": "MANTER"},
-        {"Ativo": "CDB 110%", "Tipo": "Renda Fixa", "Preço": 100.00, "Yield": "0.85%", "Recomendação": "COMPRA"}
-    ]
-    
-    df_s = pd.DataFrame(sugestoes)
-    df_s['Cotas Possíveis'] = (valor // df_s['Preço']).astype(int)
-    df_s['Investimento'] = df_s['Cotas Possíveis'] * df_s['Preço']
-    df_s['Troco'] = valor - df_s['Investimento']
-    
-    st.write(f"### Recomendações para R$ {valor:.2f}")
-    
-    st.dataframe(
-        df_s.style.format({
-            'Preço': 'R$ {:.2f}',
-            'Investimento': 'R$ {:.2f}',
-            'Troco': 'R$ {:.2f}'
-        }),
-        use_container_width=True
-    )
-    
-    col_estr1, col_estr2 = st.columns(2)
-    
-    with col_estr1:
-        st.info("""
-        ### 💡 Estratégia Base 10
-        Ativos com preço próximo de R$ 10 são ideais para aportes de R$ 150.
-        """)
-    
-    with col_estr2:
-        st.write("### 🧮 Simulador Rápido")
-        ativo_escolhido = st.selectbox("Escolha um ativo:", df_s['Ativo'].tolist())
-        ativo_info = df_s[df_s['Ativo'] == ativo_escolhido].iloc[0]
+    # --- ETAPA 1: PERFIL ---
+    if st.session_state.etapa_carteira == 1:
+        st.markdown("---")
+        st.subheader("📋 Passo 1: Conte sobre você")
         
-        cotas = int(valor // ativo_info['Preço'])
-        investido = cotas * ativo_info['Preço']
-        troco = valor - investido
+        col1, col2 = st.columns(2)
         
-        st.metric("Cotas que comprará", cotas)
-        st.metric("Total investido", f"R$ {investido:.2f}")
-        st.metric("Troco", f"R$ {troco:.2f}")
-
-# --- 3. PROJEÇÃO & DISCIPLINA ---
-elif menu == "🎯 Projeção & Disciplina":
-    st.title("🚀 O Poder do Reinvestimento")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        aporte = st.number_input("💰 Aporte Mensal (R$)", value=150.0, step=50.0)
-        taxa_anual = st.slider("📈 Rentabilidade Anual Estimada (%)", 5, 20, 10) / 100
-        taxa_mensal = (1 + taxa_anual) ** (1/12) - 1
-    
-    with col2:
-        anos = st.slider("⏳ Período (anos)", 1, 40, 10)
-        meses = anos * 12
-    
-    df_p = pd.DataFrame({'Mês': range(1, meses+1)})
-    df_p['Com Reinvestimento'] = [aporte * (((1+taxa_mensal)**m - 1)/taxa_mensal) for m in df_p['Mês']]
-    df_p['Sem Reinvestimento'] = [aporte * m for m in df_p['Mês']]
-    
-    final_com = df_p['Com Reinvestimento'].iloc[-1]
-    final_sem = df_p['Sem Reinvestimento'].iloc[-1]
-    diferenca = final_com - final_sem
-    
-    col_m1, col_m2, col_m3 = st.columns(3)
-    col_m1.metric("Total Aportado", f"R$ {aporte * meses:,.2f}")
-    col_m2.metric("Com Reinvestimento", f"R$ {final_com:,.2f}")
-    col_m3.metric("Sem Reinvestimento", f"R$ {final_sem:,.2f}")
-    
-    fig = px.line(df_p, x='Mês', y=['Com Reinvestimento', 'Sem Reinvestimento'],
-                  title=f"Projeção para {anos} anos",
-                  color_discrete_map={'Com Reinvestimento': '#D4AF37', 'Sem Reinvestimento': '#FF4B4B'})
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.error(f"""
-    ### ⚠️ ATENÇÃO: Custo de não reinvestir
-    
-    Se você gastar os rendimentos, **deixará de ganhar R$ {diferenca:,.2f}** em {anos} anos.
-    """)
-
-# --- 4. GESTÃO DE CARTEIRA ---
-elif menu == "⚙️ Gestão de Carteira":
-    st.title("⚙️ Gerenciar Ativos")
-    
-    tab1, tab2 = st.tabs(["📥 Adicionar", "✏️ Editar/Excluir"])
-    
-    with tab1:
-        with st.form("add_ativo", clear_on_submit=True):
-            st.subheader("➕ Novo Ativo")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                ticker = st.text_input("📌 Ticker", help="Ex: PETR4, MXRF11").upper()
-                qtd = st.number_input("🔢 Quantidade", min_value=0.01, step=0.01, format="%.2f")
-            
-            with col2:
-                pm = st.number_input("💵 Preço Médio (R$)", min_value=0.01, step=0.01, format="%.2f")
-                setor = st.selectbox("🏷️ Setor", 
-                                    ["Ações", "FII Papel", "FII Tijolo", "ETF", "Renda Fixa"])
-            
-            submitted = st.form_submit_button("💾 Salvar Ativo", use_container_width=True)
-            if submitted:
-                if salvar_ativo(ticker, qtd, pm, setor):
-                    st.balloons()
-    
-    with tab2:
-        st.subheader("📋 Ativos Cadastrados")
-        
-        df_lista = pd.read_sql_query("SELECT * FROM ativos ORDER BY ticker", conn)
-        
-        if not df_lista.empty:
-            if 'editando' not in st.session_state:
-                st.session_state.editando = None
-            if 'excluindo' not in st.session_state:
-                st.session_state.excluindo = None
-            
-            for idx, row in df_lista.iterrows():
-                with st.container():
-                    col1, col2, col3 = st.columns([4, 1, 1])
-                    
-                    with col1:
-                        st.write(f"**{row['ticker']}** | {row['qtd']:.2f} cotas | R$ {row['pm']:.2f} | {row['setor']}")
-                    
-                    with col2:
-                        if st.button(f"✏️", key=f"edit_{row['ticker']}", use_container_width=True):
-                            st.session_state.editando = row['ticker']
-                            st.session_state.edit_qtd = row['qtd']
-                            st.session_state.edit_pm = row['pm']
-                            st.session_state.edit_setor = row['setor']
-                            st.rerun()
-                    
-                    with col3:
-                        if st.button(f"🗑️", key=f"del_{row['ticker']}", use_container_width=True):
-                            st.session_state.excluindo = row['ticker']
-                            st.rerun()
-                    
-                    if st.session_state.editando == row['ticker']:
-                        with st.form(key=f"form_edit_{row['ticker']}"):
-                            st.write(f"**Editando: {row['ticker']}**")
-                            
-                            col_e1, col_e2, col_e3 = st.columns(3)
-                            with col_e1:
-                                nova_qtd = st.number_input("Quantidade", value=float(st.session_state.edit_qtd), min_value=0.01)
-                            with col_e2:
-                                novo_pm = st.number_input("Preço Médio", value=float(st.session_state.edit_pm), min_value=0.01)
-                            with col_e3:
-                                novo_setor = st.selectbox("Setor", 
-                                                         ["Ações", "FII Papel", "FII Tijolo", "ETF", "Renda Fixa"],
-                                                         index=["Ações", "FII Papel", "FII Tijolo", "ETF", "Renda Fixa"].index(st.session_state.edit_setor))
-                            
-                            col_b1, col_b2 = st.columns(2)
-                            with col_b1:
-                                if st.form_submit_button("💾 Salvar", use_container_width=True):
-                                    if atualizar_ativo(row['ticker'], nova_qtd, novo_pm, novo_setor):
-                                        st.session_state.editando = None
-                                        st.rerun()
-                            with col_b2:
-                                if st.form_submit_button("❌ Cancelar", use_container_width=True):
-                                    st.session_state.editando = None
-                                    st.rerun()
-                    
-                    if st.session_state.excluindo == row['ticker']:
-                        st.warning(f"Tem certeza que deseja excluir **{row['ticker']}**?")
-                        col_c1, col_c2 = st.columns(2)
-                        with col_c1:
-                            if st.button(f"✅ Sim", key=f"confirm_yes_{row['ticker']}", use_container_width=True):
-                                if excluir_ativo(row['ticker']):
-                                    st.session_state.excluindo = None
-                                    st.rerun()
-                        with col_c2:
-                            if st.button(f"❌ Não", key=f"confirm_no_{row['ticker']}", use_container_width=True):
-                                st.session_state.excluindo = None
-                                st.rerun()
-                    
-                    st.divider()
-        else:
-            st.info("📭 Nenhum ativo cadastrado.")
-
-# --- RODAPÉ ---
-st.sidebar.markdown("---")
-st.sidebar.caption(f"🕐 Último acesso: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-st.sidebar.caption("💎 Igorbarbo Private Banking v8.0")
+        with col1:
+            valor = st.number_input("💰 Quanto quer investir? (R$)", 
+                                   min_value=100.0, 
+ 
